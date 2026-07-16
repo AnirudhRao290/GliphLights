@@ -22,6 +22,7 @@ interface GlyphRepository {
     suspend fun animateChannels(channels: List<Int>, params: AnimationParams = AnimationParams()): SdkResult<Unit>
     suspend fun displayProgress(progress: Int, reverse: Boolean = false): SdkResult<Unit>
     suspend fun turnOff(): SdkResult<Unit>
+    suspend fun turnOffChannels(channels: List<Int>): SdkResult<Unit>
     suspend fun toggleWithBrightness(channels: List<Int>, brightness: Float): SdkResult<Unit>
     suspend fun cleanup()
 }

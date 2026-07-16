@@ -27,6 +27,7 @@ import com.example.gliphlights.ui.Screen
 import com.example.gliphlights.ui.bottomNavItems
 import com.example.gliphlights.ui.screens.ControlsScreen
 import com.example.gliphlights.ui.screens.DashboardScreen
+import com.example.gliphlights.ui.screens.GlyphEditorScreen
 import com.example.gliphlights.ui.screens.MusicVisualizerScreen
 import com.example.gliphlights.ui.screens.SettingsScreen
 import com.example.gliphlights.ui.theme.GliphLightsTheme
@@ -89,7 +90,11 @@ fun MainScreen() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Dashboard.route) {
-                DashboardScreen()
+                DashboardScreen(
+                    onNavigateToEditor = {
+                        navController.navigate(Screen.Editor.route)
+                    }
+                )
             }
             composable(Screen.Controls.route) {
                 ControlsScreen()
@@ -99,6 +104,11 @@ fun MainScreen() {
             }
             composable(Screen.Settings.route) {
                 SettingsScreen()
+            }
+            composable(Screen.Editor.route) {
+                GlyphEditorScreen(
+                    onBack = { navController.popBackStack() }
+                )
             }
         }
     }

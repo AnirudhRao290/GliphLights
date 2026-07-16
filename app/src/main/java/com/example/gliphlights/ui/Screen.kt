@@ -12,6 +12,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     data object Controls : Screen("controls", "Controls", Icons.Default.Lightbulb)
     data object Visualizer : Screen("visualizer", "Visualizer", Icons.Default.MusicNote)
     data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+    data object Editor : Screen("editor", "Editor", Icons.Default.Lightbulb)
 }
 
 val bottomNavItems = listOf(

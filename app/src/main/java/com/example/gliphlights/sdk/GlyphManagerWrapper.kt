@@ -269,6 +269,38 @@ class GlyphManagerWrapper @Inject constructor(
         }
     }
 
+    suspend fun turnOffChannels(channels: List<Int>): SdkResult<Unit> {
+        return try {
+            ensureSessionActive()
+
+            val channelsToTurnOff = channels.toSet()
+            val remaining = activeChannels.filter { it !in channelsToTurnOff }
+
+            if (remaining.isEmpty()) {
+                withContext(Dispatchers.IO) {
+                    glyphManager?.turnOff()
+                }
+            } else {
+                withContext(Dispatchers.IO) {
+                    val builder = glyphManager?.getGlyphFrameBuilder()
+                        ?: throw Exception("GlyphManager not initialized")
+                    remaining.forEach { builder.buildChannel(it) }
+                    val frame = builder.build()
+                    glyphManager?.toggle(frame)
+                }
+            }
+
+            activeChannels.clear()
+            activeChannels.addAll(remaining)
+            updateGlyphState()
+
+            SdkResult.Success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to turn off channels", e)
+            SdkResult.Error(e, "Failed to turn off channels: ${e.message}")
+        }
+    }
+
     suspend fun toggleWithBrightness(channels: List<Int>, brightness: Float): SdkResult<Unit> {
         return try {
             ensureSessionActive()

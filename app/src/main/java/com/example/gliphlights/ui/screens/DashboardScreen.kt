@@ -47,6 +47,7 @@ import com.example.gliphlights.viewmodel.DashboardViewModel
 
 @Composable
 fun DashboardScreen(
+    onNavigateToEditor: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -89,7 +90,8 @@ fun DashboardScreen(
                     deviceInfo = state.deviceInfo,
                     onToggleAll = viewModel::toggleAll,
                     onAnimateAll = viewModel::animateAll,
-                    onTurnOff = viewModel::turnOff
+                    onTurnOff = viewModel::turnOff,
+                    onNavigateToEditor = onNavigateToEditor
                 )
             }
 
@@ -117,7 +119,8 @@ private fun DashboardContent(
     deviceInfo: DeviceInfo,
     onToggleAll: () -> Unit,
     onAnimateAll: () -> Unit,
-    onTurnOff: () -> Unit
+    onTurnOff: () -> Unit,
+    onNavigateToEditor: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -138,7 +141,8 @@ private fun DashboardContent(
         ActionButtons(
             onToggleAll = onToggleAll,
             onAnimateAll = onAnimateAll,
-            onTurnOff = onTurnOff
+            onTurnOff = onTurnOff,
+            onNavigateToEditor = onNavigateToEditor
         )
     }
 }
@@ -297,12 +301,35 @@ private fun ZoneChip(zone: GlyphZone, isActive: Boolean) {
 private fun ActionButtons(
     onToggleAll: () -> Unit,
     onAnimateAll: () -> Unit,
-    onTurnOff: () -> Unit
+    onTurnOff: () -> Unit,
+    onNavigateToEditor: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Button(
+            onClick = onNavigateToEditor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.tertiary
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lightbulb,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Open Editor",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+
         Button(
             onClick = onToggleAll,
             modifier = Modifier
