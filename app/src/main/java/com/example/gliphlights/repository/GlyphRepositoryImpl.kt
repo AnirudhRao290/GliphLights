@@ -73,6 +73,9 @@ class GlyphRepositoryImpl @Inject constructor(
 
     override suspend fun turnOff(): SdkResult<Unit> = glyphManager.turnOff()
 
+    override suspend fun toggleWithBrightness(channels: List<Int>, brightness: Float): SdkResult<Unit> =
+        glyphManager.toggleWithBrightness(channels, brightness)
+
     override suspend fun cleanup() {
         glyphManager.cleanup()
         scope.cancel()
