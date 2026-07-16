@@ -27,6 +27,7 @@ import com.example.gliphlights.ui.Screen
 import com.example.gliphlights.ui.bottomNavItems
 import com.example.gliphlights.ui.screens.ControlsScreen
 import com.example.gliphlights.ui.screens.DashboardScreen
+import com.example.gliphlights.ui.screens.MusicVisualizerScreen
 import com.example.gliphlights.ui.screens.SettingsScreen
 import com.example.gliphlights.ui.theme.GliphLightsTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -92,6 +93,9 @@ fun MainScreen() {
             }
             composable(Screen.Controls.route) {
                 ControlsScreen()
+            }
+            composable(Screen.Visualizer.route) {
+                MusicVisualizerScreen()
             }
             composable(Screen.Settings.route) {
                 SettingsScreen()

@@ -190,3 +190,14 @@ The system SHALL release SDK resources on cleanup by calling `closeSession()` th
 #### Scenario: Cleanup releases resources
 - **WHEN** `cleanup()` is called
 - **THEN** the session is closed, `glyphManager.unInit()` is called, and session state is `DISCONNECTED`
+
+### Requirement: Toggle channels with brightness
+The system SHALL provide a `toggleWithBrightness(channels, brightness)` method on GlyphRepository that toggles specific channels with a given brightness level in a single SDK command.
+
+#### Scenario: Toggle with brightness applied
+- **WHEN** `toggleWithBrightness(listOf(0,1,2), 0.5f)` is called
+- **THEN** a GlyphFrame is built with channels 0, 1, 2 and `buildBrightness(0.5f)`, and `glyphManager.toggle(frame)` is called
+
+#### Scenario: Turn off when brightness is zero
+- **WHEN** `toggleWithBrightness(channels, 0.0f)` is called
+- **THEN** `glyphManager.turnOff()` is called instead of sending a zero-brightness frame

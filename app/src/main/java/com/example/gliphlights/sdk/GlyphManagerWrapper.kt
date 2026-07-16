@@ -269,6 +269,42 @@ class GlyphManagerWrapper @Inject constructor(
         }
     }
 
+    suspend fun toggleWithBrightness(channels: List<Int>, brightness: Float): SdkResult<Unit> {
+        return try {
+            ensureSessionActive()
+
+            if (brightness <= 0.0f || channels.isEmpty()) {
+                withContext(Dispatchers.IO) {
+                    glyphManager?.turnOff()
+                }
+                activeChannels.clear()
+                updateGlyphState()
+                return SdkResult.Success(Unit)
+            }
+
+            val channelCount = channels.size
+            val activeCount = (channelCount * brightness.coerceIn(0.0f, 1.0f)).toInt().coerceAtLeast(1)
+            val activeChannelsList = channels.take(activeCount)
+
+            withContext(Dispatchers.IO) {
+                val builder = glyphManager?.getGlyphFrameBuilder()
+                    ?: throw Exception("GlyphManager not initialized")
+                activeChannelsList.forEach { builder.buildChannel(it) }
+                val frame = builder.build()
+                glyphManager?.toggle(frame)
+            }
+
+            activeChannels.clear()
+            activeChannels.addAll(activeChannelsList)
+            updateGlyphState()
+
+            SdkResult.Success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle with brightness", e)
+            SdkResult.Error(e, "Failed to toggle with brightness: ${e.message}")
+        }
+    }
+
     suspend fun cleanup() {
         try {
             closeSession()

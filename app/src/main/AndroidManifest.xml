@@ -5,6 +5,9 @@
     <!-- Nothing Glyph SDK permission -->
     <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />
 
+    <!-- Audio recording for visualizer -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:name=".GlyphLightsApplication"
         android:allowBackup="true"
