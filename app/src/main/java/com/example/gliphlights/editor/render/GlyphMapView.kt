@@ -1,8 +1,7 @@
 package com.example.gliphlights.editor.render
 
+import android.view.MotionEvent
 import android.view.View
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -17,19 +16,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInteropFilter
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.toSize
-import android.view.MotionEvent
 import com.example.gliphlights.editor.gesture.GestureEvent
 import com.example.gliphlights.editor.gesture.GestureSampler
 import com.example.gliphlights.editor.model.GlyphNodeLayout
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun GlyphMapView(
-    layout: GlyphNodeLayout,
+    layout: GlyphNodeLayout?,
     activeChannels: Set<Int>,
     onGestureEvent: (GestureEvent) -> Unit,
+    onLayoutCreated: (GlyphNodeLayout) -> Unit,
     modifier: Modifier = Modifier,
     view: View? = null
 ) {
@@ -38,34 +37,31 @@ fun GlyphMapView(
     var offsetY by remember { mutableFloatStateOf(0f) }
     var hitNodeId by remember { mutableStateOf<String?>(null) }
 
-    val sampler = remember(layout) {
-        GestureSampler(layout) { event ->
-            when (event) {
-                is GestureEvent.DragEnter -> hitNodeId = event.nodeId
-                is GestureEvent.DragEnd -> hitNodeId = null
-                else -> {}
-            }
-            onGestureEvent(event)
-        }
-    }
-
-    LaunchedEffect(view) {
-        view?.let { sampler.setView(it) }
-    }
-
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(0.5f, 3f)
-        offsetX += panChange.x
-        offsetY += panChange.y
-    }
+    var lastTouchCount by remember { mutableStateOf(0) }
+    var lastPinchDist by remember { mutableFloatStateOf(0f) }
+    var lastPinchCentroid by remember { mutableStateOf(Offset.Zero) }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val density = LocalDensity.current
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
 
         val currentLayout = remember(width, height) {
-            GlyphNodeLayout(width, height)
+            GlyphNodeLayout(width, height).also { onLayoutCreated(it) }
+        }
+
+        val sampler = remember(currentLayout) {
+            GestureSampler(currentLayout) { event ->
+                when (event) {
+                    is GestureEvent.DragEnter -> hitNodeId = event.nodeId
+                    is GestureEvent.DragEnd -> hitNodeId = null
+                    else -> {}
+                }
+                onGestureEvent(event)
+            }
+        }
+
+        LaunchedEffect(view) {
+            view?.let { sampler.setView(it) }
         }
 
         PreviewRenderer(
@@ -80,23 +76,68 @@ fun GlyphMapView(
                     translationX = offsetX
                     translationY = offsetY
                 }
-                .transformable(state = transformState)
                 .pointerInteropFilter { event ->
-                    val x = event.x / scale - offsetX / scale
-                    val y = event.y / scale - offsetY / scale
-                    val position = Offset(x, y)
+                    val pointerCount = event.pointerCount
 
                     when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            sampler.processDown(position)
+                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                            lastTouchCount = pointerCount
+                            if (pointerCount == 1) {
+                                val x = (event.x - offsetX) / scale
+                                val y = (event.y - offsetY) / scale
+                                sampler.processDown(Offset(x, y))
+                            }
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
-                            sampler.processMove(position)
+                            if (pointerCount >= 2) {
+                                val p1x = event.getX(0)
+                                val p1y = event.getY(0)
+                                val p2x = event.getX(1)
+                                val p2y = event.getY(1)
+
+                                val dx = p1x - p2x
+                                val dy = p1y - p2y
+                                val currentDist = sqrt(dx * dx + dy * dy)
+                                val centroid = Offset((p1x + p2x) / 2f, (p1y + p2y) / 2f)
+
+                                if (lastPinchDist > 0f) {
+                                    val zoomFactor = currentDist / lastPinchDist
+                                    if (abs(zoomFactor - 1f) > 0.001f) {
+                                        scale = (scale * zoomFactor).coerceIn(0.5f, 3f)
+                                        sampler.processZoom(centroid, zoomFactor)
+                                    }
+
+                                    val panDelta = centroid - lastPinchCentroid
+                                    if (abs(panDelta.x) > 0.5f || abs(panDelta.y) > 0.5f) {
+                                        offsetX += panDelta.x
+                                        offsetY += panDelta.y
+                                        sampler.processPan(panDelta)
+                                    }
+                                }
+
+                                lastPinchDist = currentDist
+                                lastPinchCentroid = centroid
+                            } else if (pointerCount == 1) {
+                                val x = (event.x - offsetX) / scale
+                                val y = (event.y - offsetY) / scale
+                                sampler.processMove(Offset(x, y))
+                            }
                             true
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            sampler.processUp(position)
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                            if (pointerCount <= 2) {
+                                lastPinchDist = 0f
+                            }
+                            if (event.action == MotionEvent.ACTION_UP || pointerCount == 1) {
+                                val x = (event.x - offsetX) / scale
+                                val y = (event.y - offsetY) / scale
+                                sampler.processUp(Offset(x, y))
+                            }
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            lastPinchDist = 0f
                             true
                         }
                         else -> false

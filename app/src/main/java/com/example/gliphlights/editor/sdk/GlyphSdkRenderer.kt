@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,6 +66,9 @@ class GlyphSdkRenderer @Inject constructor(
     private fun sendCommand(model: AnimationModel) {
         val activeChannels = model.activeChannels.toList()
         scope?.launch {
+            val isActive = glyphRepository.isSessionActive.first()
+            if (!isActive) return@launch
+
             if (activeChannels.isEmpty()) {
                 glyphRepository.turnOff()
             } else {

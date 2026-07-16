@@ -10,17 +10,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +44,20 @@ fun GlyphEditorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val view = LocalView.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        if (!uiState.isSessionActive && !uiState.isLoading) {
+            viewModel.startSession()
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -64,12 +85,14 @@ fun GlyphEditorScreen(
             EditorBottomBar(
                 activeCount = uiState.activeCount,
                 isSessionActive = uiState.isSessionActive,
+                isLoading = uiState.isLoading,
                 onStartSession = viewModel::startSession,
                 onStopSession = viewModel::stopSession,
                 onClearAll = viewModel::clearAll,
                 onSendToDevice = viewModel::sendToDevice
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -80,6 +103,7 @@ fun GlyphEditorScreen(
                 layout = uiState.layout,
                 activeChannels = uiState.activeChannels,
                 onGestureEvent = viewModel::handleGestureEvent,
+                onLayoutCreated = viewModel::onLayoutCreated,
                 modifier = Modifier.weight(1f),
                 view = view
             )
@@ -91,6 +115,7 @@ fun GlyphEditorScreen(
 private fun EditorBottomBar(
     activeCount: Int,
     isSessionActive: Boolean,
+    isLoading: Boolean,
     onStartSession: () -> Unit,
     onStopSession: () -> Unit,
     onClearAll: () -> Unit,
@@ -126,15 +151,24 @@ private fun EditorBottomBar(
 
                 androidx.compose.material3.Button(
                     onClick = if (isSessionActive) onStopSession else onStartSession,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    enabled = !isLoading
                 ) {
-                    Text(text = if (isSessionActive) "Stop" else "Start")
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.height(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(text = if (isSessionActive) "Stop" else "Start")
+                    }
                 }
 
                 androidx.compose.material3.Button(
                     onClick = onSendToDevice,
                     modifier = Modifier.weight(1f),
-                    enabled = activeCount > 0 && isSessionActive
+                    enabled = activeCount > 0 && isSessionActive && !isLoading
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
