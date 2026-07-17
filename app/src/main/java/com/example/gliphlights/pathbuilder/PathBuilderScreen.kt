@@ -1,0 +1,594 @@
+package com.example.gliphlights.pathbuilder
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.gliphlights.pathbuilder.model.EngineSnapshot
+import com.example.gliphlights.pathbuilder.model.InterpolationMode
+import com.example.gliphlights.pathbuilder.model.PathSettings
+import com.example.gliphlights.pathbuilder.model.SavedSequence
+import com.example.gliphlights.pathbuilder.render.PathBuilderMapView
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PathBuilderScreen(
+    onBack: () -> Unit,
+    viewModel: PathBuilderViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val snapshot by viewModel.engineSnapshot.collectAsState()
+    val view = LocalView.current
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val librarySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.statusMessage) {
+        uiState.statusMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearStatus()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Path Builder", fontWeight = FontWeight.Bold)
+                        uiState.loadedSequenceName?.let { name ->
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.showSaveDialog(true) },
+                        enabled = uiState.pathNodes.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = "Save sequence")
+                    }
+                    IconButton(onClick = viewModel::toggleLibrary) {
+                        Icon(Icons.Default.LibraryMusic, contentDescription = "Library")
+                    }
+                    IconButton(onClick = viewModel::toggleSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            PathBuilderMapView(
+                layout = uiState.layout,
+                nodeAlphas = snapshot.nodeAlphas,
+                liveTrail = uiState.liveTrail,
+                livePathNodes = uiState.pathNodes,
+                enteredNodeId = uiState.enteredNodeId,
+                drawMode = uiState.drawMode,
+                settings = uiState.settings,
+                onLayoutCreated = viewModel::onLayoutCreated,
+                onSample = viewModel::onSample,
+                onNodeEntered = viewModel::onNodeEntered,
+                onStrokeStart = viewModel::onStrokeStart,
+                onStrokeEnd = viewModel::onStrokeEnd,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                view = view
+            )
+
+            PathOpsBar(
+                canUndo = uiState.canUndo,
+                canRedo = uiState.canRedo,
+                hasPath = uiState.pathNodes.isNotEmpty(),
+                drawMode = uiState.drawMode,
+                onDrawMode = viewModel::setDrawMode,
+                onUndo = viewModel::undo,
+                onRedo = viewModel::redo,
+                onClear = viewModel::clearPath,
+                onReverse = viewModel::reversePath,
+                onMirror = viewModel::mirrorPath,
+                onCloseLoop = viewModel::closeLoop,
+                onDuplicate = viewModel::duplicatePath,
+                onSimplify = viewModel::simplifyPath,
+                onSmooth = viewModel::smoothPath,
+                onTrim = viewModel::trimPathEnds,
+                onPreview = viewModel::previewPath
+            )
+
+            HardwareBar(
+                hasPath = uiState.pathNodes.isNotEmpty(),
+                hardwareEnabled = uiState.hardwareEnabled,
+                hardwareBusy = uiState.hardwareBusy,
+                onPlayOnGlyph = viewModel::playOnGlyph,
+                onStopHardware = viewModel::stopHardware
+            )
+
+            TransportBar(
+                snapshot = snapshot,
+                nodeCount = uiState.nodeCount,
+                onPlay = viewModel::play,
+                onPause = viewModel::pause,
+                onRestart = viewModel::restart,
+                onSeek = viewModel::seek
+            )
+        }
+    }
+
+    if (uiState.showSettings) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::toggleSettings,
+            sheetState = settingsSheetState
+        ) {
+            PathSettingsSheet(
+                settings = uiState.settings,
+                onChange = viewModel::updateSettings,
+                onClose = viewModel::toggleSettings
+            )
+        }
+    }
+
+    if (uiState.showLibrary) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::toggleLibrary,
+            sheetState = librarySheetState
+        ) {
+            SequenceLibrarySheet(
+                presets = uiState.presets,
+                saved = uiState.savedSequences,
+                onLoad = viewModel::loadSequence,
+                onDelete = viewModel::deleteSavedSequence,
+                onClose = viewModel::toggleLibrary
+            )
+        }
+    }
+
+    if (uiState.showSaveDialog) {
+        SaveSequenceDialog(
+            onDismiss = { viewModel.showSaveDialog(false) },
+            onSave = viewModel::saveCurrentSequence
+        )
+    }
+}
+
+@Composable
+private fun HardwareBar(
+    hasPath: Boolean,
+    hardwareEnabled: Boolean,
+    hardwareBusy: Boolean,
+    onPlayOnGlyph: () -> Unit,
+    onStopHardware: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Button(
+            onClick = onPlayOnGlyph,
+            enabled = hasPath && !hardwareBusy,
+            modifier = Modifier.weight(1f)
+        ) {
+            if (hardwareBusy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.height(18.dp).width(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(if (hardwareEnabled) "Replay on Glyph" else "Send to Glyph")
+        }
+        if (hardwareEnabled) {
+            OutlinedButton(onClick = onStopHardware) {
+                Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Stop Glyph")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SequenceLibrarySheet(
+    presets: List<SavedSequence>,
+    saved: List<SavedSequence>,
+    onLoad: (SavedSequence) -> Unit,
+    onDelete: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Text("Sequences", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text("Predefined", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(6.dp))
+        presets.forEach { seq ->
+            SequenceRow(
+                sequence = seq,
+                onPlay = { onLoad(seq) },
+                onDelete = null
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Saved", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(6.dp))
+        if (saved.isEmpty()) {
+            Text(
+                text = "No saved sequences yet. Draw a path and tap Save.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        } else {
+            saved.forEach { seq ->
+                SequenceRow(
+                    sequence = seq,
+                    onPlay = { onLoad(seq) },
+                    onDelete = { onDelete(seq.id) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        TextButton(onClick = onClose, modifier = Modifier.align(Alignment.End)) {
+            Text("Close")
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SequenceRow(
+    sequence: SavedSequence,
+    onPlay: () -> Unit,
+    onDelete: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(sequence.name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = "${sequence.nodes.size} nodes",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        TextButton(onClick = onPlay) { Text("Play") }
+        if (onDelete != null) {
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveSequenceDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save Sequence") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name.ifBlank { "My Sequence" }) },
+                enabled = true
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun PathOpsBar(
+    canUndo: Boolean,
+    canRedo: Boolean,
+    hasPath: Boolean,
+    drawMode: Boolean,
+    onDrawMode: (Boolean) -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onClear: () -> Unit,
+    onReverse: () -> Unit,
+    onMirror: () -> Unit,
+    onCloseLoop: () -> Unit,
+    onDuplicate: () -> Unit,
+    onSimplify: () -> Unit,
+    onSmooth: () -> Unit,
+    onTrim: () -> Unit,
+    onPreview: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = drawMode,
+                onClick = { onDrawMode(true) },
+                label = { Text("Draw") }
+            )
+            FilterChip(
+                selected = !drawMode,
+                onClick = { onDrawMode(false) },
+                label = { Text("Preview") }
+            )
+            Box(modifier = Modifier.weight(1f))
+            TextButton(onClick = onUndo, enabled = canUndo) { Text("Undo") }
+            TextButton(onClick = onRedo, enabled = canRedo) { Text("Redo") }
+            IconButton(onClick = onClear, enabled = hasPath) {
+                Icon(Icons.Default.Delete, contentDescription = "Clear")
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            OutlinedButton(onClick = onReverse, enabled = hasPath) { Text("Reverse") }
+            OutlinedButton(onClick = onMirror, enabled = hasPath) { Text("Mirror") }
+            OutlinedButton(onClick = onCloseLoop, enabled = hasPath) { Text("Close Loop") }
+            OutlinedButton(onClick = onDuplicate, enabled = hasPath) { Text("Duplicate") }
+            OutlinedButton(onClick = onSimplify, enabled = hasPath) { Text("Simplify") }
+            OutlinedButton(onClick = onSmooth, enabled = hasPath) { Text("Smooth") }
+            OutlinedButton(onClick = onTrim, enabled = hasPath) { Text("Trim") }
+            OutlinedButton(onClick = onPreview, enabled = hasPath) { Text("Preview Path") }
+        }
+    }
+}
+
+@Composable
+private fun TransportBar(
+    snapshot: EngineSnapshot,
+    nodeCount: Int,
+    onPlay: () -> Unit,
+    onPause: () -> Unit,
+    onRestart: () -> Unit,
+    onSeek: (Long) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = "Nodes: $nodeCount · ${snapshot.playheadMs} / ${snapshot.totalDurationMs} ms",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        if (snapshot.totalDurationMs > 0) {
+            Slider(
+                value = snapshot.playheadMs.toFloat().coerceIn(0f, snapshot.totalDurationMs.toFloat()),
+                onValueChange = { onSeek(it.toLong()) },
+                valueRange = 0f..snapshot.totalDurationMs.toFloat().coerceAtLeast(1f),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onRestart) {
+                Icon(Icons.Default.Refresh, contentDescription = "Restart")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = { if (snapshot.isPlaying) onPause() else onPlay() }) {
+                Icon(
+                    imageVector = if (snapshot.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (snapshot.isPlaying) "Pause" else "Play"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PathSettingsSheet(
+    settings: PathSettings,
+    onChange: (PathSettings) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Text("Path Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SettingsSlider("Animation Speed", settings.animationSpeed, 0.25f..3f) {
+            onChange(settings.copy(animationSpeed = it))
+        }
+        SettingsSlider("Node Duration (ms)", settings.nodeDurationMs.toFloat(), 40f..400f) {
+            onChange(settings.copy(nodeDurationMs = it.toLong()))
+        }
+        SettingsSlider("Fade Duration (ms)", settings.fadeDurationMs.toFloat(), 0f..250f) {
+            onChange(settings.copy(fadeDurationMs = it.toLong()))
+        }
+        SettingsSlider("Brightness", settings.brightness, 0.1f..1f) {
+            onChange(settings.copy(brightness = it))
+        }
+        SettingsSlider("Trail Length", settings.trailLength.toFloat(), 1f..8f) {
+            onChange(settings.copy(trailLength = it.toInt()))
+        }
+        SettingsSlider("Trail Fade", settings.trailFade, 0f..1f) {
+            onChange(settings.copy(trailFade = it))
+        }
+        SettingsSlider("Sampling Density (px)", settings.samplingDensityPx, 2f..16f) {
+            onChange(settings.copy(samplingDensityPx = it))
+        }
+        SettingsSlider("Min Node Distance", settings.minimumNodeDistance.toFloat(), 1f..4f) {
+            onChange(settings.copy(minimumNodeDistance = it.toInt()))
+        }
+        SettingsSlider("Smoothing Strength", settings.smoothingStrength, 0f..1f) {
+            onChange(settings.copy(smoothingStrength = it))
+        }
+        SettingsSlider("Repeat Count", settings.repeatCount.toFloat().coerceAtLeast(1f), 1f..8f) {
+            onChange(settings.copy(repeatCount = it.toInt(), infiniteLoop = false))
+        }
+
+        SettingsSwitch("Infinite Loop", settings.infiniteLoop) {
+            onChange(settings.copy(infiniteLoop = it))
+        }
+        SettingsSwitch("Reverse Playback", settings.reversePlayback) {
+            onChange(settings.copy(reversePlayback = it))
+        }
+        SettingsSwitch("Ping-Pong", settings.pingPong) {
+            onChange(settings.copy(pingPong = it))
+        }
+
+        Text("Interpolation", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = settings.interpolation == InterpolationMode.LINEAR,
+                onClick = { onChange(settings.copy(interpolation = InterpolationMode.LINEAR)) },
+                label = { Text("Linear") }
+            )
+            FilterChip(
+                selected = settings.interpolation == InterpolationMode.STEP,
+                onClick = { onChange(settings.copy(interpolation = InterpolationMode.STEP)) },
+                label = { Text("Step") }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        TextButton(onClick = onClose, modifier = Modifier.align(Alignment.End)) {
+            Text("Done")
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SettingsSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            text = "$label: ${"%.2f".format(value)}",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Slider(value = value.coerceIn(range), onValueChange = onValueChange, valueRange = range)
+    }
+}
+
+@Composable
+private fun SettingsSwitch(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}

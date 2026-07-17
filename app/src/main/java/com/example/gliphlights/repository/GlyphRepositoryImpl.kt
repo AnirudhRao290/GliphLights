@@ -60,6 +60,9 @@ class GlyphRepositoryImpl @Inject constructor(
     override suspend fun toggleChannels(channels: List<Int>): SdkResult<Unit> =
         glyphManager.toggleChannels(channels)
 
+    override suspend fun setChannels(channels: List<Int>): SdkResult<Unit> =
+        glyphManager.setChannels(channels)
+
     override suspend fun animateAll(params: AnimationParams): SdkResult<Unit> {
         val allChannels = GlyphZone.A.channels + GlyphZone.B.channels + GlyphZone.C.channels
         return glyphManager.animateChannels(allChannels, params)

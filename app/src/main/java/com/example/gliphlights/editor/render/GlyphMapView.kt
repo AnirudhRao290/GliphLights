@@ -65,7 +65,7 @@ fun GlyphMapView(
         }
 
         PreviewRenderer(
-            nodes = currentLayout.nodes,
+            layout = currentLayout,
             activeChannels = activeChannels,
             hitNodeId = hitNodeId,
             modifier = Modifier
@@ -138,6 +138,7 @@ fun GlyphMapView(
                         }
                         MotionEvent.ACTION_CANCEL -> {
                             lastPinchDist = 0f
+                            sampler.processUp(Offset.Zero)
                             true
                         }
                         else -> false

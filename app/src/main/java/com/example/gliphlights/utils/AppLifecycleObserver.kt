@@ -23,17 +23,16 @@ class AppLifecycleObserver @Inject constructor(
 
     override fun onStart(owner: LifecycleOwner) {
         super.onStart(owner)
-        // App came to foreground - re-open session
-        scope.launch {
-            glyphRepository.openSession()
-        }
+        // Do not auto-open sessions — Editor / Dashboard manage their own lifecycle.
     }
 
     override fun onStop(owner: LifecycleOwner) {
         super.onStop(owner)
-        // App went to background - close session
+        // Turn lights off when backgrounded, but keep the session so Editor can resume.
         scope.launch {
-            glyphRepository.closeSession()
+            if (glyphRepository.isSessionActive.value) {
+                glyphRepository.turnOff()
+            }
         }
     }
 

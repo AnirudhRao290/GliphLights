@@ -1,7 +1,6 @@
 package com.example.gliphlights.viewmodel
 
 import android.util.Log
-import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.gliphlights.editor.gesture.GestureEvent
@@ -15,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -68,7 +68,7 @@ class GlyphEditorViewModel @Inject constructor(
         val layout = _uiState.value.layout ?: return
         when (event) {
             is GestureEvent.Tap -> {
-                val node = layout.findNearestNode(event.position, maxDistance = 50f)
+                val node = layout.findNearestNode(event.position)
                 if (node != null) {
                     toggleNode(node)
                 }
@@ -102,11 +102,47 @@ class GlyphEditorViewModel @Inject constructor(
         }
     }
 
+    fun startRenderer() {
+        sdkRenderer.start()
+    }
+
     fun startSession() {
         if (_uiState.value.isLoading) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+
+            if (glyphRepository.isSessionActive.first()) {
+                sdkRenderer.start()
+                if (currentModel.activeCount > 0) {
+                    sdkRenderer.render(currentModel)
+                }
+                _uiState.update { it.copy(isLoading = false) }
+                Log.d(TAG, "Session already active — renderer started")
+                return@launch
+            }
+
+            // After Stop the SDK stays connected (SESSION_CLOSED) — only reopen.
+            if (glyphRepository.isConnected.first()) {
+                val sessionResult = glyphRepository.openSession()
+                if (sessionResult is SdkResult.Error) {
+                    Log.e(TAG, "Re-open session failed: ${sessionResult.message}")
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = sessionResult.message ?: "Failed to open Glyph session"
+                        )
+                    }
+                    return@launch
+                }
+                sdkRenderer.start()
+                if (currentModel.activeCount > 0) {
+                    sdkRenderer.render(currentModel)
+                }
+                _uiState.update { it.copy(isLoading = false) }
+                Log.d(TAG, "Session re-opened successfully")
+                return@launch
+            }
 
             val initResult = glyphRepository.initialize()
             if (initResult is SdkResult.Error) {
@@ -151,10 +187,12 @@ class GlyphEditorViewModel @Inject constructor(
     }
 
     fun stopSession() {
-        sdkRenderer.stop()
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            sdkRenderer.stop()
             glyphRepository.turnOff()
             glyphRepository.closeSession()
+            _uiState.update { it.copy(isLoading = false, isSessionActive = false) }
         }
     }
 
@@ -164,16 +202,6 @@ class GlyphEditorViewModel @Inject constructor(
         if (_uiState.value.isSessionActive) {
             viewModelScope.launch {
                 glyphRepository.turnOff()
-            }
-        }
-    }
-
-    fun sendToDevice() {
-        if (_uiState.value.isSessionActive) {
-            sdkRenderer.render(currentModel)
-        } else {
-            _uiState.update {
-                it.copy(errorMessage = "Start a session first to send to device")
             }
         }
     }

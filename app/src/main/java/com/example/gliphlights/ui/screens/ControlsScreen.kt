@@ -37,9 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.gliphlights.models.ControlsUiState
 import com.example.gliphlights.models.GlyphState
 import com.example.gliphlights.models.GlyphZone
+import com.example.gliphlights.ui.components.ScreenHeader
 import com.example.gliphlights.viewmodel.ControlsViewModel
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -68,14 +66,12 @@ fun ControlsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Glyph Controls",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+        ScreenHeader(
+            title = "Controls",
+            subtitle = "Zones, channels, and animation"
         )
 
         when (val state = uiState) {

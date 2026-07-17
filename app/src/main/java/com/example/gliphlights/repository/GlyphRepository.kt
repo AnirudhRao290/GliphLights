@@ -18,6 +18,7 @@ interface GlyphRepository {
     suspend fun closeSession(): SdkResult<Unit>
     suspend fun toggleAll(): SdkResult<Unit>
     suspend fun toggleChannels(channels: List<Int>): SdkResult<Unit>
+    suspend fun setChannels(channels: List<Int>): SdkResult<Unit>
     suspend fun animateAll(params: AnimationParams = AnimationParams()): SdkResult<Unit>
     suspend fun animateChannels(channels: List<Int>, params: AnimationParams = AnimationParams()): SdkResult<Unit>
     suspend fun displayProgress(progress: Int, reverse: Boolean = false): SdkResult<Unit>

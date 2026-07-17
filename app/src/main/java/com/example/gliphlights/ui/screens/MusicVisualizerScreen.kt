@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.gliphlights.ui.components.ScreenHeader
 import com.example.gliphlights.viewmodel.MusicVisualizerUiState
 import com.example.gliphlights.viewmodel.MusicVisualizerViewModel
 import com.example.gliphlights.viewmodel.VisualizationModeType
@@ -68,15 +69,13 @@ fun MusicVisualizerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Music Visualizer",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+        ScreenHeader(
+            title = "Visualizer",
+            subtitle = "React to music with Glyph lights"
         )
 
         if (!uiState.hasPermission && !uiState.permissionRequested) {

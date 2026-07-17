@@ -28,21 +28,28 @@ class GlyphSdkRenderer @Inject constructor(
     private var coalesceJob: Job? = null
 
     fun start() {
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        if (scope == null) {
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        }
     }
 
     fun stop() {
-        scope?.launch {
-            glyphRepository.turnOff()
-        }
+        coalesceJob?.cancel()
+        coalesceJob = null
+        pendingModel = null
         scope?.cancel()
         scope = null
-        pendingModel = null
-        coalesceJob?.cancel()
+        lastCommandTime = 0L
     }
 
     fun render(model: AnimationModel) {
-        val currentScope = scope ?: return
+        val currentScope = scope ?: run {
+            Log.w(TAG, "render: scope was null, auto-starting renderer")
+            start()
+            scope ?: return
+        }
+        val channels = model.activeChannels
+        Log.d(TAG, "render: channels=$channels")
         val now = System.currentTimeMillis()
         val elapsed = now - lastCommandTime
 
@@ -65,14 +72,23 @@ class GlyphSdkRenderer @Inject constructor(
 
     private fun sendCommand(model: AnimationModel) {
         val activeChannels = model.activeChannels.toList()
+        Log.d(TAG, "sendCommand: channels=$activeChannels")
         scope?.launch {
             val isActive = glyphRepository.isSessionActive.first()
-            if (!isActive) return@launch
+            Log.d(TAG, "sendCommand: session active=$isActive")
+            if (!isActive) {
+                Log.w(TAG, "sendCommand: session not active, dropping command")
+                return@launch
+            }
 
             if (activeChannels.isEmpty()) {
+                Log.d(TAG, "sendCommand: turning off all channels")
                 glyphRepository.turnOff()
             } else {
-                glyphRepository.toggleChannels(activeChannels)
+                // Absolute frame — editor already holds desired ON set
+                Log.d(TAG, "sendCommand: setChannels $activeChannels")
+                val result = glyphRepository.setChannels(activeChannels)
+                Log.d(TAG, "sendCommand: setChannels result=$result")
             }
         }
     }

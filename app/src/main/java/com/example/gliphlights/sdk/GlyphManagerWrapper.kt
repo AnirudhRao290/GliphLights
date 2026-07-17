@@ -15,10 +15,12 @@ import com.nothing.ketchum.GlyphManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -83,11 +85,17 @@ class GlyphManagerWrapper @Inject constructor(
                     }
                 }
                 glyphManager?.init(callback)
-                serviceConnected.await()
+                withTimeout(5000L) {
+                    serviceConnected.await()
+                }
             }
 
             _sessionState.value = SessionState.CONNECTED
             SdkResult.Success(Unit)
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Glyph service connection timed out", e)
+            _sessionState.value = SessionState.DISCONNECTED
+            SdkResult.Error(e, "Glyph service connection timed out")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to init Glyph SDK", e)
             _sessionState.value = SessionState.DISCONNECTED
@@ -105,13 +113,18 @@ class GlyphManagerWrapper @Inject constructor(
             }
 
             withContext(Dispatchers.IO) {
-                val result = glyphManager?.register(Glyph.DEVICE_24111) ?: false
-                if (!result) {
-                    throw Exception("Registration failed - not authorized")
+                withTimeout(5000L) {
+                    val result = glyphManager?.register(Glyph.DEVICE_24111) ?: false
+                    if (!result) {
+                        throw Exception("Registration failed - not authorized")
+                    }
                 }
             }
 
             SdkResult.Success(Unit)
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Glyph registration timed out", e)
+            SdkResult.Error(e, "Glyph registration timed out")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register", e)
             SdkResult.Error(e, "Failed to register: ${e.message}")
@@ -130,11 +143,16 @@ class GlyphManagerWrapper @Inject constructor(
             }
 
             withContext(Dispatchers.IO) {
-                glyphManager?.openSession()
+                withTimeout(5000L) {
+                    glyphManager?.openSession()
+                }
             }
 
             _sessionState.value = SessionState.SESSION_ACTIVE
             SdkResult.Success(Unit)
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Glyph session open timed out", e)
+            SdkResult.Error(e, "Glyph session open timed out")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open session", e)
             SdkResult.Error(e, "Failed to open session: ${e.message}")
@@ -163,10 +181,6 @@ class GlyphManagerWrapper @Inject constructor(
         return try {
             ensureSessionActive()
 
-            val channelsToToggle = channels.toSet()
-            val turningOff = channelsToToggle.any { it in activeChannels }
-            val turningOn = channelsToToggle.any { it !in activeChannels }
-
             val newActiveChannels = activeChannels.toMutableSet()
             channels.forEach { channel ->
                 if (channel in newActiveChannels) {
@@ -176,29 +190,52 @@ class GlyphManagerWrapper @Inject constructor(
                 }
             }
 
-            if (newActiveChannels.isEmpty()) {
-                withContext(Dispatchers.IO) {
-                    glyphManager?.turnOff()
-                }
-            } else {
-                withContext(Dispatchers.IO) {
-                    val builder = glyphManager?.getGlyphFrameBuilder()
-                        ?: throw Exception("GlyphManager not initialized")
-                    newActiveChannels.forEach { builder.buildChannel(it) }
-                    val frame = builder.build()
-                    glyphManager?.toggle(frame)
-                }
-            }
-
-            activeChannels.clear()
-            activeChannels.addAll(newActiveChannels)
-            updateGlyphState()
-
+            Log.d(TAG, "toggleChannels: input=$channels, newActive=$newActiveChannels")
+            applyChannelFrame(newActiveChannels)
+            Log.d(TAG, "toggleChannels: success, activeChannels=$activeChannels")
             SdkResult.Success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle channels", e)
             SdkResult.Error(e, "Failed to toggle channels: ${e.message}")
         }
+    }
+
+    /**
+     * Sets the absolute active channel set (not XOR). Used by the editor which
+     * already tracks desired ON state and sends the full frame each render.
+     */
+    suspend fun setChannels(channels: List<Int>): SdkResult<Unit> {
+        return try {
+            ensureSessionActive()
+            val newActiveChannels = channels.toSet()
+            Log.d(TAG, "setChannels: channels=$newActiveChannels")
+            applyChannelFrame(newActiveChannels)
+            Log.d(TAG, "setChannels: success, activeChannels=$activeChannels")
+            SdkResult.Success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set channels", e)
+            SdkResult.Error(e, "Failed to set channels: ${e.message}")
+        }
+    }
+
+    private suspend fun applyChannelFrame(newActiveChannels: Set<Int>) {
+        if (newActiveChannels.isEmpty()) {
+            withContext(Dispatchers.IO) {
+                glyphManager?.turnOff()
+            }
+        } else {
+            withContext(Dispatchers.IO) {
+                val builder = glyphManager?.getGlyphFrameBuilder()
+                    ?: throw Exception("GlyphManager not initialized")
+                newActiveChannels.forEach { builder.buildChannel(it) }
+                val frame = builder.build()
+                glyphManager?.toggle(frame)
+            }
+        }
+
+        activeChannels.clear()
+        activeChannels.addAll(newActiveChannels)
+        updateGlyphState()
     }
 
     suspend fun animateChannels(
@@ -365,8 +402,10 @@ class GlyphManagerWrapper @Inject constructor(
     }
 
     private fun ensureSessionActive() {
-        if (_sessionState.value != SessionState.SESSION_ACTIVE) {
-            throw IllegalStateException("Session is not active")
+        val state = _sessionState.value
+        if (state != SessionState.SESSION_ACTIVE) {
+            Log.e(TAG, "ensureSessionActive: session not active, state=$state")
+            throw IllegalStateException("Session is not active (state=$state)")
         }
     }
 

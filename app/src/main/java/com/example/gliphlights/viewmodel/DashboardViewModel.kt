@@ -116,8 +116,6 @@ class DashboardViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        viewModelScope.launch {
-            glyphRepository.closeSession()
-        }
+        // Do not close the shared Glyph session — Editor and other screens own lifecycle.
     }
 }

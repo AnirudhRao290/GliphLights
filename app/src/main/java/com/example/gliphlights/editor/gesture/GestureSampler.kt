@@ -3,8 +3,6 @@ package com.example.gliphlights.editor.gesture
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerInputChange
-import com.example.gliphlights.editor.model.GlyphNode
 import com.example.gliphlights.editor.model.GlyphNodeLayout
 
 class GestureSampler(
@@ -13,7 +11,7 @@ class GestureSampler(
 ) {
     private var lastHitNodeId: String? = null
     private var isDragging = false
-    private var dragStartNode: GlyphNode? = null
+    private var paintMode = false
     private var view: View? = null
 
     fun setView(view: View) {
@@ -23,52 +21,43 @@ class GestureSampler(
     fun reset() {
         lastHitNodeId = null
         isDragging = false
-        dragStartNode = null
+        paintMode = false
     }
 
     fun processDown(position: Offset) {
-        val node = layout.findNearestNode(position, maxDistance = 50f)
+        val node = layout.findNearestNode(position)
         if (node != null) {
             isDragging = true
-            dragStartNode = node
+            paintMode = false
             lastHitNodeId = node.id
             onEvent(GestureEvent.DragStart(position))
             onEvent(GestureEvent.DragEnter(node.id, position))
             performHaptic()
+        } else {
+            isDragging = false
+            lastHitNodeId = null
         }
     }
 
     fun processMove(position: Offset) {
         if (!isDragging) return
 
-        val node = layout.findNearestNode(position, maxDistance = 50f)
-        if (node != null && node.id != lastHitNodeId) {
-            lastHitNodeId = node.id
-            onEvent(GestureEvent.DragEnter(node.id, position))
-            performHaptic()
-        }
+        val node = layout.findPaintTarget(position, lastHitNodeId) ?: return
+        if (node.id == lastHitNodeId) return
+
+        paintMode = true
+        lastHitNodeId = node.id
+        onEvent(GestureEvent.DragEnter(node.id, position))
+        performHaptic()
     }
 
     fun processUp(position: Offset) {
         if (isDragging) {
-            val dragNode = dragStartNode
-            if (dragNode != null && lastHitNodeId == dragNode.id) {
-                val dist = (position - dragNode.position).getDistance()
-                if (dist < 10f) {
-                    onEvent(GestureEvent.Tap(position))
-                }
-            }
             onEvent(GestureEvent.DragEnd(position))
-        } else {
-            val node = layout.findNearestNode(position, maxDistance = 50f)
-            if (node != null) {
-                onEvent(GestureEvent.Tap(position))
-            }
         }
-
         isDragging = false
+        paintMode = false
         lastHitNodeId = null
-        dragStartNode = null
     }
 
     fun processPan(delta: Offset) {

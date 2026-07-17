@@ -1,117 +1,138 @@
 package com.example.gliphlights.editor.render
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import com.example.gliphlights.editor.model.GlyphNode
-import com.example.gliphlights.editor.model.GlyphRegion
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
+import com.example.gliphlights.editor.model.GlyphNodeLayout
 
-private val RegionAColor = Color(0xFF64B5F6)
-private val RegionBColor = Color(0xFF81C784)
-private val RegionCColor = Color(0xFFFFB74D)
-
-private val ActiveGlowColor = Color(0xFFFFFFFF)
-private val InactiveNodeColor = Color(0xFF424242)
-private val HitTargetColor = Color(0xFFFFFF00)
-
-private const val NODE_RADIUS = 12f
-private const val GLOW_RADIUS = 24f
-private const val GLOW_ON_DURATION = 150
-private const val GLOW_OFF_DURATION = 100
+private val ActiveFill = Color(0xFFF5F5F5)
+private val ActiveGlow = Color(0xCCFFFFFF)
+private val InactiveFill = Color(0xFF2A2A2A)
+private val InactiveStroke = Color(0xFF4A4A4A)
+private val HitStroke = Color(0xFFFFEB3B)
+private val CameraFill = Color(0xFF141414)
+private val CameraRing = Color(0xFF2C2C2C)
+private val CameraLens = Color(0xFF0A0A0A)
+private val CameraLensRing = Color(0xFF333333)
 
 @Composable
 fun PreviewRenderer(
-    nodes: List<GlyphNode>,
+    layout: GlyphNodeLayout,
     activeChannels: Set<Int>,
     hitNodeId: String?,
     modifier: Modifier = Modifier
 ) {
-    val glowAnimatables = remember {
-        nodes.associate { it.id to Animatable(0f) }
-    }
-
-    LaunchedEffect(activeChannels) {
-        coroutineScope {
-            nodes.forEach { node ->
-                val target = if (node.sdkIndex in activeChannels) 1f else 0f
-                val animatable = glowAnimatables[node.id] ?: return@forEach
-                if (animatable.targetValue != target) {
-                    launch {
-                        val duration = if (target > animatable.value) GLOW_ON_DURATION else GLOW_OFF_DURATION
-                        animatable.animateTo(
-                            targetValue = target,
-                            animationSpec = tween(durationMillis = duration)
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     Canvas(modifier = modifier.fillMaxSize()) {
-        nodes.forEach { node ->
-            val glow = glowAnimatables[node.id]?.value ?: 0f
+        drawCameraIsland(layout.center, layout.cameraRadius)
+
+        layout.nodes.forEach { node ->
+            val isOn = node.sdkIndex in activeChannels
             val isHit = node.id == hitNodeId
-            val regionColor = getRegionColor(node.region)
-            drawNode(node, regionColor, glow, isHit)
+            drawSegmentBox(
+                node = node,
+                length = layout.segmentLength,
+                width = layout.segmentWidth,
+                isOn = isOn,
+                isHit = isHit
+            )
         }
     }
 }
 
-private fun DrawScope.drawNode(
+private fun DrawScope.drawCameraIsland(center: Offset, radius: Float) {
+    drawCircle(color = CameraFill, radius = radius, center = center)
+    drawCircle(
+        color = CameraRing,
+        radius = radius,
+        center = center,
+        style = Stroke(width = radius * 0.07f)
+    )
+    drawCircle(
+        color = CameraRing.copy(alpha = 0.45f),
+        radius = radius * 0.78f,
+        center = center,
+        style = Stroke(width = radius * 0.035f)
+    )
+
+    val lensR = radius * 0.145f
+    listOf(
+        center + Offset(-radius * 0.18f, -radius * 0.12f),
+        center + Offset(-radius * 0.18f, radius * 0.22f),
+        center + Offset(radius * 0.22f, -radius * 0.05f)
+    ).forEachIndexed { index, lensCenter ->
+        val r = if (index == 2) lensR * 0.72f else lensR
+        drawCircle(color = CameraLens, radius = r, center = lensCenter)
+        drawCircle(
+            color = CameraLensRing,
+            radius = r,
+            center = lensCenter,
+            style = Stroke(width = r * 0.18f)
+        )
+    }
+}
+
+private fun DrawScope.drawSegmentBox(
     node: GlyphNode,
-    regionColor: Color,
-    glow: Float,
+    length: Float,
+    width: Float,
+    isOn: Boolean,
     isHit: Boolean
 ) {
     val pos = node.position
+    // Orient the long axis tangent to the circle (perpendicular to radial angle).
+    val rotation = node.angleDeg + 90f
+    val corner = CornerRadius(width * 0.35f, width * 0.35f)
 
-    if (glow > 0f) {
-        drawCircle(
-            color = ActiveGlowColor.copy(alpha = glow * 0.4f),
-            radius = GLOW_RADIUS * glow,
-            center = pos
-        )
-        drawCircle(
-            color = regionColor.copy(alpha = glow * 0.6f),
-            radius = GLOW_RADIUS * 0.7f * glow,
-            center = pos
-        )
+    rotate(degrees = rotation, pivot = pos) {
+        val topLeft = Offset(pos.x - length / 2f, pos.y - width / 2f)
+        val size = Size(length, width)
+
+        if (isOn) {
+            drawRoundRect(
+                color = ActiveGlow,
+                topLeft = Offset(topLeft.x - 3f, topLeft.y - 3f),
+                size = Size(size.width + 6f, size.height + 6f),
+                cornerRadius = CornerRadius(corner.x + 2f, corner.y + 2f)
+            )
+            drawRoundRect(
+                color = ActiveFill,
+                topLeft = topLeft,
+                size = size,
+                cornerRadius = corner
+            )
+        } else {
+            drawRoundRect(
+                color = InactiveFill,
+                topLeft = topLeft,
+                size = size,
+                cornerRadius = corner
+            )
+            drawRoundRect(
+                color = InactiveStroke,
+                topLeft = topLeft,
+                size = size,
+                cornerRadius = corner,
+                style = Stroke(width = 1.5f)
+            )
+        }
+
+        if (isHit) {
+            drawRoundRect(
+                color = HitStroke,
+                topLeft = Offset(topLeft.x - 2f, topLeft.y - 2f),
+                size = Size(size.width + 4f, size.height + 4f),
+                cornerRadius = CornerRadius(corner.x + 1f, corner.y + 1f),
+                style = Stroke(width = 2.5f)
+            )
+        }
     }
-
-    val nodeColor = when {
-        isHit -> HitTargetColor
-        glow > 0f -> regionColor.copy(alpha = 0.5f + glow * 0.5f)
-        else -> InactiveNodeColor
-    }
-
-    drawCircle(
-        color = nodeColor,
-        radius = NODE_RADIUS,
-        center = pos
-    )
-
-    if (glow > 0.3f) {
-        drawCircle(
-            color = ActiveGlowColor.copy(alpha = glow * 0.8f),
-            radius = NODE_RADIUS * 0.4f,
-            center = pos
-        )
-    }
-}
-
-private fun getRegionColor(region: GlyphRegion): Color = when (region) {
-    GlyphRegion.A -> RegionAColor
-    GlyphRegion.B -> RegionBColor
-    GlyphRegion.C -> RegionCColor
 }
