@@ -32,7 +32,9 @@ data class PhysicsLabUiState(
     val showParams: Boolean = false,
     val statusMessage: String? = null,
     val fps: Int = 0,
-    val settingsLoaded: Boolean = false
+    val settingsLoaded: Boolean = false,
+    val gravityX: Float = 0f,
+    val gravityY: Float = 9.81f
 )
 
 @HiltViewModel
@@ -197,7 +199,13 @@ class PhysicsLabViewModel @Inject constructor(
                 _model.value = engine.step(sample, dt)
                 frames++
                 if (now - fpsWindow >= 1_000_000_000L) {
-                    _uiState.update { it.copy(fps = frames) }
+                    _uiState.update {
+                        it.copy(
+                            fps = frames,
+                            gravityX = sample.gravityX,
+                            gravityY = sample.gravityY
+                        )
+                    }
                     frames = 0
                     fpsWindow = now
                 }

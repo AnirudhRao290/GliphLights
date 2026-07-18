@@ -8,8 +8,8 @@ import com.example.gliphlights.editor.model.AnimationModel
 import com.example.gliphlights.editor.model.GlyphNode
 import com.example.gliphlights.editor.model.GlyphNodeLayout
 import com.example.gliphlights.editor.sdk.GlyphSdkRenderer
-import com.example.gliphlights.repository.GlyphRepository
 import com.example.gliphlights.models.SdkResult
+import com.example.gliphlights.repository.GlyphRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,13 +19,28 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class EditorTool(val label: String) {
+    PAINT("Paint"),
+    ERASE("Erase"),
+    FILL("Fill"),
+    PREVIEW("Preview")
+}
+
 data class GlyphEditorUiState(
     val isSessionActive: Boolean = false,
     val activeChannels: Set<Int> = emptySet(),
     val activeCount: Int = 0,
     val layout: GlyphNodeLayout? = null,
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val tool: EditorTool = EditorTool.PAINT,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
+    val zoomScale: Float = 1f,
+    val showSettings: Boolean = false,
+    val glowIntensity: Float = 1f,
+    val hapticsEnabled: Boolean = true,
+    val previewPulse: Boolean = false
 )
 
 @HiltViewModel
@@ -36,6 +51,7 @@ class GlyphEditorViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "GlyphEditorVM"
+        private const val MAX_HISTORY = 48
     }
 
     private val _uiState = MutableStateFlow(GlyphEditorUiState())
@@ -43,6 +59,9 @@ class GlyphEditorViewModel @Inject constructor(
 
     private var nodeStates = mutableMapOf<Int, Boolean>()
     private var currentModel = AnimationModel.empty()
+    private val undoStack = ArrayDeque<Map<Int, Boolean>>()
+    private val redoStack = ArrayDeque<Map<Int, Boolean>>()
+    private var strokeStarted = false
 
     init {
         observeSession()
@@ -64,29 +83,123 @@ class GlyphEditorViewModel @Inject constructor(
         _uiState.update { it.copy(layout = layout) }
     }
 
+    fun setTool(tool: EditorTool) {
+        _uiState.update {
+            it.copy(
+                tool = tool,
+                previewPulse = tool == EditorTool.PREVIEW
+            )
+        }
+    }
+
+    fun toggleSettings() {
+        _uiState.update { it.copy(showSettings = !it.showSettings) }
+    }
+
+    fun updateGlowIntensity(value: Float) {
+        _uiState.update { it.copy(glowIntensity = value.coerceIn(0.4f, 1.5f)) }
+    }
+
+    fun setHapticsEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(hapticsEnabled = enabled) }
+    }
+
+    fun zoomIn() {
+        _uiState.update { it.copy(zoomScale = (it.zoomScale * 1.2f).coerceIn(0.5f, 3f)) }
+    }
+
+    fun zoomOut() {
+        _uiState.update { it.copy(zoomScale = (it.zoomScale / 1.2f).coerceIn(0.5f, 3f)) }
+    }
+
+    fun resetZoom() {
+        _uiState.update { it.copy(zoomScale = 1f) }
+    }
+
+    fun onZoomChanged(scale: Float) {
+        _uiState.update { it.copy(zoomScale = scale.coerceIn(0.5f, 3f)) }
+    }
+
     fun handleGestureEvent(event: GestureEvent) {
         val layout = _uiState.value.layout ?: return
+        val tool = _uiState.value.tool
+        if (tool == EditorTool.PREVIEW) return
+
         when (event) {
+            is GestureEvent.DragStart -> {
+                strokeStarted = false
+            }
             is GestureEvent.Tap -> {
-                val node = layout.findNearestNode(event.position)
-                if (node != null) {
-                    toggleNode(node)
-                }
+                val node = layout.findNearestNode(event.position) ?: return
+                beginStrokeIfNeeded()
+                applyTool(node, layout)
             }
             is GestureEvent.DragEnter -> {
-                val node = layout.getNode(event.nodeId)
-                if (node != null) {
-                    toggleNode(node)
-                }
+                val node = layout.getNode(event.nodeId) ?: return
+                beginStrokeIfNeeded()
+                applyTool(node, layout)
+            }
+            is GestureEvent.DragEnd -> {
+                strokeStarted = false
             }
             else -> {}
         }
     }
 
-    private fun toggleNode(node: GlyphNode) {
-        val current = nodeStates[node.sdkIndex] ?: false
-        nodeStates[node.sdkIndex] = !current
+    private fun beginStrokeIfNeeded() {
+        if (strokeStarted) return
+        strokeStarted = true
+        pushHistory()
+    }
+
+    private fun applyTool(node: GlyphNode, layout: GlyphNodeLayout) {
+        when (_uiState.value.tool) {
+            EditorTool.PAINT -> setNode(node.sdkIndex, true)
+            EditorTool.ERASE -> setNode(node.sdkIndex, false)
+            EditorTool.FILL -> fillRegion(node, layout)
+            EditorTool.PREVIEW -> {}
+        }
         updateModel()
+    }
+
+    private fun setNode(sdkIndex: Int, on: Boolean) {
+        nodeStates[sdkIndex] = on
+        if (!on) nodeStates.remove(sdkIndex)
+    }
+
+    private fun fillRegion(node: GlyphNode, layout: GlyphNodeLayout) {
+        layout.getNodesByRegion(node.region).forEach { n ->
+            nodeStates[n.sdkIndex] = true
+        }
+    }
+
+    private fun pushHistory() {
+        undoStack.addLast(nodeStates.toMap())
+        if (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
+        redoStack.clear()
+        publishHistoryFlags()
+    }
+
+    fun undo() {
+        if (undoStack.isEmpty()) return
+        redoStack.addLast(nodeStates.toMap())
+        nodeStates = undoStack.removeLast().toMutableMap()
+        updateModel()
+        publishHistoryFlags()
+    }
+
+    fun redo() {
+        if (redoStack.isEmpty()) return
+        undoStack.addLast(nodeStates.toMap())
+        nodeStates = redoStack.removeLast().toMutableMap()
+        updateModel()
+        publishHistoryFlags()
+    }
+
+    private fun publishHistoryFlags() {
+        _uiState.update {
+            it.copy(canUndo = undoStack.isNotEmpty(), canRedo = redoStack.isNotEmpty())
+        }
     }
 
     private fun updateModel() {
@@ -122,7 +235,6 @@ class GlyphEditorViewModel @Inject constructor(
                 return@launch
             }
 
-            // After Stop the SDK stays connected (SESSION_CLOSED) — only reopen.
             if (glyphRepository.isConnected.first()) {
                 val sessionResult = glyphRepository.openSession()
                 if (sessionResult is SdkResult.Error) {
@@ -197,6 +309,7 @@ class GlyphEditorViewModel @Inject constructor(
     }
 
     fun clearAll() {
+        pushHistory()
         nodeStates.clear()
         updateModel()
         if (_uiState.value.isSessionActive) {

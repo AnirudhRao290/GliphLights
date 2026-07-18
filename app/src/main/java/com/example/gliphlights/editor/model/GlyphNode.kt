@@ -42,6 +42,10 @@ data class GlyphNode(
     val position: Offset,
     /** Radial angle on the doughnut (degrees, Compose: 0°=right, 90°=down). */
     val angleDeg: Float,
+    /** Bent-tube arc start on the ring (Compose degrees). */
+    val tubeStartDeg: Float = angleDeg,
+    /** Bent-tube sweep along the ring (degrees). */
+    val tubeSweepDeg: Float = 4f,
     /** Doughnut-ring neighbors (includes gap bridges A11↔B1, B5↔C1, C20↔A1). */
     val neighbors: List<String> = emptyList()
 )

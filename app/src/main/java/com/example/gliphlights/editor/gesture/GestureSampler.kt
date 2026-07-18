@@ -13,6 +13,7 @@ class GestureSampler(
     private var isDragging = false
     private var paintMode = false
     private var view: View? = null
+    var hapticsEnabled: Boolean = true
 
     fun setView(view: View) {
         this.view = view
@@ -69,6 +70,7 @@ class GestureSampler(
     }
 
     private fun performHaptic() {
+        if (!hapticsEnabled) return
         view?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
     }
 }

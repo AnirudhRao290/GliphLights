@@ -6,9 +6,13 @@ import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
- * Glyph map for Nothing Phone (3a) / (3a) Pro — three arcs on one doughnut ring.
+ * Glyph map for Nothing Phone (3a) / (3a) Pro — three bent LED arcs on one doughnut.
  */
-class GlyphNodeLayout(viewportWidth: Float, viewportHeight: Float) {
+class GlyphNodeLayout(
+    viewportWidth: Float,
+    viewportHeight: Float,
+    centerYFraction: Float = 0.42f
+) {
 
     val nodes: List<GlyphNode>
     val center: Offset
@@ -16,6 +20,7 @@ class GlyphNodeLayout(viewportWidth: Float, viewportHeight: Float) {
     val glyphRadius: Float
     val segmentLength: Float
     val segmentWidth: Float
+    val tubeThickness: Float
     val hitRadius: Float
 
     /** Node indices in clockwise doughnut order (same length as [nodes] permutation). */
@@ -25,25 +30,26 @@ class GlyphNodeLayout(viewportWidth: Float, viewportHeight: Float) {
 
     init {
         val centerX = viewportWidth / 2f
-        val centerY = viewportHeight * 0.40f
+        val centerY = viewportHeight * centerYFraction.coerceIn(0.35f, 0.55f)
         center = Offset(centerX, centerY)
 
-        val maxRadius = minOf(viewportWidth, viewportHeight) / 2f * 0.70f
+        val maxRadius = minOf(viewportWidth, viewportHeight) / 2f * 0.72f
         glyphRadius = maxRadius
-        cameraRadius = maxRadius * 0.72f
+        cameraRadius = maxRadius * 0.70f
 
+        tubeThickness = (maxRadius * 0.105f).coerceIn(11f, 26f)
+        // Legacy box metrics kept for hit-testing compatibility
         val densestSweep = GlyphDoughnut3a.arcC.endAngleDeg - GlyphDoughnut3a.arcC.startAngleDeg
         val densestSpacing = (2.0 * Math.PI * glyphRadius * (densestSweep / 360.0) /
             (GlyphRegion.C.nodeCount - 1)).toFloat()
-        segmentLength = densestSpacing * 0.72f
-        segmentWidth = (maxRadius * 0.09f).coerceIn(14f, 24f)
-        hitRadius = hypot(segmentLength, segmentWidth) * 0.7f
+        segmentLength = densestSpacing * 0.85f
+        segmentWidth = tubeThickness
+        hitRadius = hypot(segmentLength, segmentWidth) * 0.85f
 
         val built = GlyphRegion.entries.flatMap { region ->
             computeRegionNodes(region, centerX, centerY)
         }
 
-        // Wire doughnut neighbors (ring + gap bridges), not only in-region chains.
         nodes = built.map { node ->
             node.copy(neighbors = GlyphDoughnut3a.neighborsOf(node.id))
         }
@@ -86,9 +92,6 @@ class GlyphNodeLayout(viewportWidth: Float, viewportHeight: Float) {
         return findNearestNode(position, hitRadius * 1.2f)
     }
 
-    /**
-     * Neighbor indices into [nodes] for physics — always the doughnut ring.
-     */
     fun doughnutNeighborIndices(): Array<IntArray> {
         return Array(nodes.size) { i ->
             nodes[i].neighbors.mapNotNull { id -> nodeMap[id]?.let { nodes.indexOf(it) } }
@@ -102,9 +105,21 @@ class GlyphNodeLayout(viewportWidth: Float, viewportHeight: Float) {
         centerX: Float,
         centerY: Float
     ): List<GlyphNode> {
-        return (0 until region.nodeCount).map { localIndex ->
-            val angleDeg = GlyphDoughnut3a.angleFor(region, localIndex)
-            val angleRad = Math.toRadians(angleDeg.toDouble()).toFloat()
+        val arc = GlyphDoughnut3a.arcFor(region)
+        val count = region.nodeCount
+        val totalSweep = arc.endAngleDeg - arc.startAngleDeg
+        val gapDeg = when (region) {
+            GlyphRegion.A -> 1.1f
+            GlyphRegion.B -> 1.4f
+            GlyphRegion.C -> 0.85f
+        }
+        val usable = (totalSweep - gapDeg * (count - 1)).coerceAtLeast(count * 1.2f)
+        val segSweep = usable / count
+
+        return (0 until count).map { localIndex ->
+            val tubeStart = arc.startAngleDeg + localIndex * (segSweep + gapDeg)
+            val mid = tubeStart + segSweep / 2f
+            val angleRad = Math.toRadians(mid.toDouble()).toFloat()
             val x = centerX + glyphRadius * cos(angleRad)
             val y = centerY + glyphRadius * sin(angleRad)
 
@@ -114,7 +129,9 @@ class GlyphNodeLayout(viewportWidth: Float, viewportHeight: Float) {
                 localIndex = localIndex,
                 sdkIndex = region.sdkIndex(localIndex),
                 position = Offset(x, y),
-                angleDeg = angleDeg,
+                angleDeg = mid,
+                tubeStartDeg = tubeStart,
+                tubeSweepDeg = segSweep,
                 neighbors = emptyList()
             )
         }

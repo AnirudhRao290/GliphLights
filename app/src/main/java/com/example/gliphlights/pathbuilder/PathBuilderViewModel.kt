@@ -31,6 +31,7 @@ data class PathBuilderUiState(
     val canRedo: Boolean = false,
     val showSettings: Boolean = false,
     val showLibrary: Boolean = false,
+    val showAdvancedOps: Boolean = false,
     val showSaveDialog: Boolean = false,
     val nodeCount: Int = 0,
     val hardwareEnabled: Boolean = false,
@@ -90,6 +91,10 @@ class PathBuilderViewModel @Inject constructor(
 
     fun toggleSettings() {
         _uiState.update { it.copy(showSettings = !it.showSettings) }
+    }
+
+    fun toggleAdvancedOps() {
+        _uiState.update { it.copy(showAdvancedOps = !it.showAdvancedOps) }
     }
 
     fun toggleLibrary() {
