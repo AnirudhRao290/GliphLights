@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.gliphlights.audio.AudioCaptureManager
 import com.example.gliphlights.audio.SignalProcessor
-import com.example.gliphlights.models.GlyphZone
+import com.example.gliphlights.pathbuilder.SequenceRepository
+import com.example.gliphlights.pathbuilder.bake.VisualizerPathBaker
+import com.example.gliphlights.repository.PresetRepository
 import com.example.gliphlights.visualizer.BeatMode
 import com.example.gliphlights.visualizer.GlowMode
 import com.example.gliphlights.visualizer.GlyphVisualizer
@@ -12,10 +14,10 @@ import com.example.gliphlights.visualizer.PulseMode
 import com.example.gliphlights.visualizer.VisualizationMode
 import com.example.gliphlights.visualizer.WaveMode
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,7 +35,10 @@ data class MusicVisualizerUiState(
     val latency: Long = 0L,
     val hasPermission: Boolean = false,
     val permissionRequested: Boolean = false,
-    val showDebug: Boolean = false
+    val showDebug: Boolean = false,
+    val isBaking: Boolean = false,
+    val bakeProgressMs: Long = 0L,
+    val statusMessage: String? = null
 )
 
 enum class VisualizationModeType(val displayName: String) {
@@ -47,7 +52,9 @@ enum class VisualizationModeType(val displayName: String) {
 class MusicVisualizerViewModel @Inject constructor(
     private val audioCaptureManager: AudioCaptureManager,
     private val signalProcessor: SignalProcessor,
-    private val glyphVisualizer: GlyphVisualizer
+    private val glyphVisualizer: GlyphVisualizer,
+    private val sequenceRepository: SequenceRepository,
+    private val presetRepository: PresetRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MusicVisualizerUiState())
@@ -80,6 +87,18 @@ class MusicVisualizerViewModel @Inject constructor(
                 _uiState.update { it.copy(latency = latency) }
             }
         }
+        viewModelScope.launch {
+            glyphVisualizer.statusMessage.collect { message ->
+                if (message != null) {
+                    _uiState.update { it.copy(statusMessage = message) }
+                }
+            }
+        }
+    }
+
+    fun clearStatus() {
+        glyphVisualizer.clearStatus()
+        _uiState.update { it.copy(statusMessage = null) }
     }
 
     private fun observeAudioLevel() {
@@ -109,9 +128,19 @@ class MusicVisualizerViewModel @Inject constructor(
 
     fun start() {
         if (!_uiState.value.hasPermission) return
-        signalProcessor.setSensitivity(_uiState.value.sensitivity)
-        signalProcessor.setNoiseGateThreshold(_uiState.value.noiseGate)
-        glyphVisualizer.start()
+        viewModelScope.launch {
+            signalProcessor.setSensitivity(_uiState.value.sensitivity)
+            signalProcessor.setNoiseGateThreshold(_uiState.value.noiseGate)
+            val started = glyphVisualizer.start()
+            if (!started) {
+                _uiState.update {
+                    it.copy(
+                        statusMessage = glyphVisualizer.statusMessage.value
+                            ?: "Glyph busy"
+                    )
+                }
+            }
+        }
     }
 
     fun stop() {
@@ -135,6 +164,48 @@ class MusicVisualizerViewModel @Inject constructor(
 
     fun toggleDebug() {
         _uiState.update { it.copy(showDebug = !it.showDebug) }
+    }
+
+    /**
+     * Records ~5s of live viz frames, bakes to PATH, dual-writes Sequence + Preset.
+     */
+    fun bakeFiveSeconds() {
+        if (!_uiState.value.isRunning || _uiState.value.isBaking) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isBaking = true, bakeProgressMs = 0L, statusMessage = "Baking 5s…") }
+            glyphVisualizer.startBakeCapture()
+            val duration = 5_000L
+            val step = 100L
+            var elapsed = 0L
+            while (elapsed < duration) {
+                delay(step)
+                elapsed += step
+                _uiState.update { it.copy(bakeProgressMs = elapsed.coerceAtMost(duration)) }
+                if (!_uiState.value.isRunning) break
+            }
+            val samples = glyphVisualizer.stopBakeCapture()
+            val baked = VisualizerPathBaker.bake(samples, targetDurationMs = duration)
+            if (baked.nodes.isEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        isBaking = false,
+                        bakeProgressMs = 0L,
+                        statusMessage = "Bake empty — play louder audio and retry"
+                    )
+                }
+                return@launch
+            }
+            val name = "Viz Bake ${System.currentTimeMillis() % 10000}"
+            sequenceRepository.save(name, baked.nodes, baked.settings)
+            presetRepository.savePath(name, baked.nodes, baked.settings)
+            _uiState.update {
+                it.copy(
+                    isBaking = false,
+                    bakeProgressMs = 0L,
+                    statusMessage = "Saved “$name” (${baked.nodes.size} nodes) — play from Dashboard"
+                )
+            }
+        }
     }
 
     override fun onCleared() {

@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -36,8 +38,14 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.example.gliphlights.MainActivity
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.Preferences
+import com.example.gliphlights.di.GlyphEntryPoint
+import com.example.gliphlights.models.SdkResult
+import com.example.gliphlights.repository.GlyphRepository
+import com.example.gliphlights.sdk.AcquireResult
+import com.example.gliphlights.sdk.GlyphClient
+import com.example.gliphlights.sdk.GlyphSessionArbiter
+import dagger.hilt.android.EntryPointAccessors
+import java.util.UUID
 
 class GlyphWidget : GlanceAppWidget() {
 
@@ -151,19 +159,72 @@ data class GlyphWidgetState(
     val isActive: Boolean = false
 )
 
+internal fun glyphEntryPoint(context: Context): GlyphEntryPoint {
+    return EntryPointAccessors.fromApplication(
+        context.applicationContext,
+        GlyphEntryPoint::class.java
+    )
+}
+
+internal suspend fun ensureGlyphSession(repository: GlyphRepository): SdkResult<Unit> {
+    if (repository.isSessionActive.value) return SdkResult.Success(Unit)
+    if (!repository.isConnected.value) {
+        val init = repository.initialize()
+        if (init is SdkResult.Error) return init
+        val reg = repository.register()
+        if (reg is SdkResult.Error) return reg
+    }
+    return repository.openSession()
+}
+
+internal suspend fun syncWidgetActiveState(
+    context: Context,
+    glanceId: GlanceId,
+    repository: GlyphRepository
+) {
+    val active = repository.glyphState.value.isActive
+    updateAppWidgetState(context, glanceId) { prefs ->
+        prefs.toMutablePreferences().apply {
+            this[IS_ACTIVE_KEY] = active
+        }
+    }
+    GlyphWidget().update(context, glanceId)
+}
+
+private suspend fun withTileOwnership(
+    arbiter: GlyphSessionArbiter,
+    block: suspend () -> Unit
+) {
+    val token = UUID.randomUUID().toString()
+    when (val acquire = arbiter.acquire(GlyphClient.TILE_WIDGET, token)) {
+        is AcquireResult.Denied -> return
+        is AcquireResult.Granted -> {
+            try {
+                block()
+            } finally {
+                arbiter.release(GlyphClient.TILE_WIDGET, acquire.token)
+            }
+        }
+    }
+}
+
 class ToggleGlyphAction : androidx.glance.appwidget.action.ActionCallback {
     override suspend fun onAction(
         context: Context,
         glanceId: GlanceId,
         parameters: ActionParameters
     ) {
-        updateAppWidgetState(context, glanceId) { currentPrefs ->
-            val current = currentPrefs[IS_ACTIVE_KEY] ?: false
-            currentPrefs.toMutablePreferences().apply {
-                this[IS_ACTIVE_KEY] = !current
+        val entry = glyphEntryPoint(context)
+        val repository = entry.glyphRepository()
+        val arbiter = entry.glyphSessionArbiter()
+
+        withTileOwnership(arbiter) {
+            val session = ensureGlyphSession(repository)
+            if (session is SdkResult.Success) {
+                repository.toggleAll()
             }
         }
-        GlyphWidget().update(context, glanceId)
+        syncWidgetActiveState(context, glanceId, repository)
     }
 }
 
@@ -173,12 +234,17 @@ class TurnOffGlyphAction : androidx.glance.appwidget.action.ActionCallback {
         glanceId: GlanceId,
         parameters: ActionParameters
     ) {
-        updateAppWidgetState(context, glanceId) { prefs ->
-            prefs.toMutablePreferences().apply {
-                this[IS_ACTIVE_KEY] = false
+        val entry = glyphEntryPoint(context)
+        val repository = entry.glyphRepository()
+        val arbiter = entry.glyphSessionArbiter()
+
+        withTileOwnership(arbiter) {
+            val session = ensureGlyphSession(repository)
+            if (session is SdkResult.Success) {
+                repository.turnOff()
             }
         }
-        GlyphWidget().update(context, glanceId)
+        syncWidgetActiveState(context, glanceId, repository)
     }
 }
 

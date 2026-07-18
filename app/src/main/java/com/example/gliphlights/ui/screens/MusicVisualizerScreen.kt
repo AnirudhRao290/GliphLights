@@ -29,10 +29,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +64,14 @@ fun MusicVisualizerScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showAdvanced by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.statusMessage) {
+        uiState.statusMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearStatus()
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -79,9 +91,14 @@ fun MusicVisualizerScreen(
         ((uiState.rawAmplitude * 0.8f + uiState.audioLevel * 0.2f) * 100f).toInt().coerceIn(0, 100)
     }
 
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Black
+    ) { padding ->
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .padding(padding)
             .background(Color.Black)
     ) {
         StudioGrainOverlay(alpha = 0.10f)
@@ -213,6 +230,25 @@ fun MusicVisualizerScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = viewModel::bakeFiveSeconds,
+                enabled = uiState.isRunning && !uiState.isBaking,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(
+                    if (uiState.isBaking) {
+                        "Baking… ${(uiState.bakeProgressMs / 1000)}s"
+                    } else {
+                        "Bake 5s → Path preset"
+                    }
+                )
+            }
+
             TextButton(onClick = { showAdvanced = !showAdvanced }) {
                 Text(if (showAdvanced) "Hide tuning" else "Tuning")
             }
@@ -242,6 +278,7 @@ fun MusicVisualizerScreen(
                 }
             }
         }
+    }
     }
 }
 

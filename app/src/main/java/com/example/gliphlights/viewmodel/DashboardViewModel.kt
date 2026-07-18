@@ -1,15 +1,27 @@
 package com.example.gliphlights.viewmodel
 
+import android.content.Context
+import android.content.Intent
+import android.os.BatteryManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.gliphlights.models.DeviceInfo
 import com.example.gliphlights.models.ErrorState
 import com.example.gliphlights.models.GlyphState
 import com.example.gliphlights.models.GlyphUiState
+import com.example.gliphlights.models.SdkResult
+import com.example.gliphlights.presets.GlyphPackShare
+import com.example.gliphlights.presets.GlyphPreset
+import com.example.gliphlights.presets.PresetPlayer
+import com.example.gliphlights.presets.PresetType
 import com.example.gliphlights.repository.GlyphRepository
+import com.example.gliphlights.repository.PresetRepository
 import com.example.gliphlights.repository.SettingsRepository
+import com.example.gliphlights.sdk.GlyphClient
+import com.example.gliphlights.services.AmbientRitualService
 import com.example.gliphlights.ui.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,13 +74,22 @@ data class StudioDestination(
 data class DashboardHeroState(
     val activityMode: DashboardActivityMode = DashboardActivityMode.IDLE,
     val fps: Int = 0,
-    val continueDestination: StudioDestination = StudioDestination.Editor
+    val continueDestination: StudioDestination = StudioDestination.Editor,
+    val presets: List<GlyphPreset> = emptyList(),
+    val progressHudPercent: Int = 0,
+    val progressHudLabel: String = "",
+    val statusMessage: String? = null,
+    val shareIntent: Intent? = null
 )
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val glyphRepository: GlyphRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val presetRepository: PresetRepository,
+    private val presetPlayer: PresetPlayer,
+    private val glyphPackShare: GlyphPackShare
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<GlyphUiState>(GlyphUiState.Loading)
@@ -82,11 +103,13 @@ class DashboardViewModel @Inject constructor(
 
     private var updateCountWindow = 0
     private var animatingUntilMs = 0L
+    private var focusJob: Job? = null
 
     init {
         initializeSdk()
         observeGlyphState()
         observeContinueDestination()
+        observePresets()
         startFpsTicker()
     }
 
@@ -95,25 +118,27 @@ class DashboardViewModel @Inject constructor(
             _uiState.value = GlyphUiState.Loading
 
             val initResult = glyphRepository.initialize()
-            if (initResult is com.example.gliphlights.models.SdkResult.Error) {
+            if (initResult is SdkResult.Error) {
                 _errorState.value = ErrorState.SdkUnavailable(initResult.message)
                 _uiState.value = GlyphUiState.Error(initResult.message)
                 return@launch
             }
 
             val registerResult = glyphRepository.register()
-            if (registerResult is com.example.gliphlights.models.SdkResult.Error) {
+            if (registerResult is SdkResult.Error) {
                 _errorState.value = ErrorState.RuntimeError(registerResult.message, registerResult.exception)
                 _uiState.value = GlyphUiState.Error(registerResult.message)
                 return@launch
             }
 
             val sessionResult = glyphRepository.openSession()
-            if (sessionResult is com.example.gliphlights.models.SdkResult.Error) {
+            if (sessionResult is SdkResult.Error) {
                 _errorState.value = ErrorState.RuntimeError(sessionResult.message, sessionResult.exception)
                 _uiState.value = GlyphUiState.Error(sessionResult.message)
                 return@launch
             }
+
+            glyphRepository.applyStartupBehavior()
         }
     }
 
@@ -143,6 +168,14 @@ class DashboardViewModel @Inject constructor(
                 _heroState.update {
                     it.copy(continueDestination = StudioDestination.fromRoute(route))
                 }
+            }
+        }
+    }
+
+    private fun observePresets() {
+        viewModelScope.launch {
+            presetRepository.presets.collect { list ->
+                _heroState.update { it.copy(presets = list) }
             }
         }
     }
@@ -186,7 +219,7 @@ class DashboardViewModel @Inject constructor(
             } else {
                 glyphRepository.toggleAll()
             }
-            if (result is com.example.gliphlights.models.SdkResult.Error) {
+            if (result is SdkResult.Error) {
                 _errorState.value = ErrorState.RuntimeError(result.message, result.exception)
             }
         }
@@ -199,7 +232,7 @@ class DashboardViewModel @Inject constructor(
                 (uiState.value as? GlyphUiState.Success)?.glyphState ?: GlyphState.INACTIVE
             )
             val result = glyphRepository.animateAll()
-            if (result is com.example.gliphlights.models.SdkResult.Error) {
+            if (result is SdkResult.Error) {
                 _errorState.value = ErrorState.RuntimeError(result.message, result.exception)
             }
         }
@@ -208,11 +241,101 @@ class DashboardViewModel @Inject constructor(
     fun turnOff() {
         viewModelScope.launch {
             animatingUntilMs = 0L
+            focusJob?.cancel()
+            presetPlayer.stop(GlyphClient.PERFORM)
             val result = glyphRepository.turnOff()
-            if (result is com.example.gliphlights.models.SdkResult.Error) {
+            if (result is SdkResult.Error) {
                 _errorState.value = ErrorState.RuntimeError(result.message, result.exception)
             }
+            _heroState.update { it.copy(progressHudPercent = 0, progressHudLabel = "") }
         }
+    }
+
+    fun playPreset(preset: GlyphPreset) {
+        viewModelScope.launch {
+            when (val result = presetPlayer.playOnce(preset, viewModelScope, loop = preset.type == PresetType.PATH)) {
+                is SdkResult.Error -> {
+                    _heroState.update { it.copy(statusMessage = result.message) }
+                }
+                is SdkResult.Success -> {
+                    _heroState.update { it.copy(statusMessage = "Playing ${preset.name}") }
+                }
+            }
+        }
+    }
+
+    fun togglePin(preset: GlyphPreset) {
+        viewModelScope.launch {
+            presetRepository.setPinned(preset.id, !preset.pinned)
+        }
+    }
+
+    fun forkPreset(preset: GlyphPreset) {
+        viewModelScope.launch {
+            val forked = presetRepository.fork(preset.id)
+            _heroState.update {
+                it.copy(statusMessage = forked?.let { p -> "Remixed as ${p.name}" } ?: "Fork failed")
+            }
+        }
+    }
+
+    fun sharePreset(preset: GlyphPreset) {
+        viewModelScope.launch {
+            val intent = glyphPackShare.exportAndShareIntent(listOf(preset.id))
+            _heroState.update { it.copy(shareIntent = Intent.createChooser(intent, "Share .glyphpack")) }
+        }
+    }
+
+    fun consumeShareIntent() {
+        _heroState.update { it.copy(shareIntent = null) }
+    }
+
+    fun clearStatus() {
+        _heroState.update { it.copy(statusMessage = null) }
+    }
+
+    fun startBatteryArc() {
+        viewModelScope.launch {
+            focusJob?.cancel()
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+            val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
+            glyphRepository.displayProgress(level, reverse = false)
+            _heroState.update {
+                it.copy(
+                    progressHudPercent = level,
+                    progressHudLabel = "Battery $level%",
+                    statusMessage = "Battery arc $level%"
+                )
+            }
+        }
+    }
+
+    fun startFiveMinFocus() {
+        focusJob?.cancel()
+        focusJob = viewModelScope.launch {
+            val totalMs = 5 * 60_000L
+            val start = System.currentTimeMillis()
+            _heroState.update { it.copy(progressHudLabel = "5-min focus", progressHudPercent = 0) }
+            while (isActive) {
+                val elapsed = System.currentTimeMillis() - start
+                val pct = ((elapsed * 100) / totalMs).toInt().coerceIn(0, 100)
+                glyphRepository.displayProgress(pct, reverse = false)
+                _heroState.update { it.copy(progressHudPercent = pct) }
+                if (pct >= 100) break
+                delay(1_000L)
+            }
+            _heroState.update { it.copy(statusMessage = "Focus complete", progressHudLabel = "Done") }
+        }
+    }
+
+    fun startAmbient() {
+        AmbientRitualService.start(context)
+        _heroState.update { it.copy(statusMessage = "Ambient ritual started") }
+    }
+
+    fun stopAmbient() {
+        AmbientRitualService.stop(context)
+        _heroState.update { it.copy(statusMessage = "Ambient stopped") }
     }
 
     fun clearError() {
@@ -221,6 +344,7 @@ class DashboardViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        // Do not close the shared Glyph session — Editor and other screens own lifecycle.
+        focusJob?.cancel()
+        presetPlayer.stop(GlyphClient.PERFORM)
     }
 }

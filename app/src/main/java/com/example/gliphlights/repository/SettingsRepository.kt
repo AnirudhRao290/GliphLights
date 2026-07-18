@@ -3,7 +3,9 @@ package com.example.gliphlights.repository
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -27,11 +29,19 @@ object SettingsKeys {
     val STARTUP_BEHAVIOR = stringPreferencesKey("startup_behavior")
     val THEME = stringPreferencesKey("theme")
     val LAST_STUDIO_ROUTE = stringPreferencesKey("last_studio_route")
+    val LAST_ACTIVE_CHANNELS = stringPreferencesKey("last_active_channels")
+    val TOUR_COMPLETED = booleanPreferencesKey("tour_completed")
+    val AMBIENT_RITUAL = stringPreferencesKey("ambient_ritual")
+    val AMBIENT_BRIGHTNESS = floatPreferencesKey("ambient_brightness")
 }
 
 interface SettingsRepository {
     val settings: Flow<AppSettings>
     val lastStudioRoute: Flow<String>
+    val lastActiveChannels: Flow<Set<Int>>
+    val tourCompleted: Flow<Boolean>
+    val ambientRitual: Flow<String>
+    val ambientBrightness: Flow<Float>
     suspend fun updateAnimatePeriod(period: Int)
     suspend fun updateAnimateCycles(cycles: Int)
     suspend fun updateAnimateInterval(interval: Int)
@@ -39,6 +49,11 @@ interface SettingsRepository {
     suspend fun updateStartupBehavior(behavior: StartupBehavior)
     suspend fun updateTheme(theme: ThemePreference)
     suspend fun updateLastStudioRoute(route: String)
+    suspend fun updateLastActiveChannels(channels: Set<Int>)
+    suspend fun setTourCompleted(completed: Boolean)
+    suspend fun resetTips()
+    suspend fun updateAmbientRitual(ritual: String)
+    suspend fun updateAmbientBrightness(brightness: Float)
 }
 
 @Singleton
@@ -77,6 +92,14 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override val lastStudioRoute: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[SettingsKeys.LAST_STUDIO_ROUTE] ?: "editor"
+    }
+
+    override val lastActiveChannels: Flow<Set<Int>> = context.dataStore.data.map { preferences ->
+        preferences[SettingsKeys.LAST_ACTIVE_CHANNELS]
+            ?.split(',')
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?.toSet()
+            ?: emptySet()
     }
 
     override suspend fun updateAnimatePeriod(period: Int) {
@@ -122,6 +145,49 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun updateLastStudioRoute(route: String) {
         context.dataStore.edit { preferences ->
             preferences[SettingsKeys.LAST_STUDIO_ROUTE] = route
+        }
+    }
+
+    override suspend fun updateLastActiveChannels(channels: Set<Int>) {
+        context.dataStore.edit { preferences ->
+            preferences[SettingsKeys.LAST_ACTIVE_CHANNELS] =
+                channels.sorted().joinToString(",")
+        }
+    }
+
+    override val tourCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[SettingsKeys.TOUR_COMPLETED] ?: false
+    }
+
+    override val ambientRitual: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SettingsKeys.AMBIENT_RITUAL] ?: "FOCUS"
+    }
+
+    override val ambientBrightness: Flow<Float> = context.dataStore.data.map { preferences ->
+        preferences[SettingsKeys.AMBIENT_BRIGHTNESS] ?: 0.45f
+    }
+
+    override suspend fun setTourCompleted(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[SettingsKeys.TOUR_COMPLETED] = completed
+        }
+    }
+
+    override suspend fun resetTips() {
+        context.dataStore.edit { preferences ->
+            preferences[SettingsKeys.TOUR_COMPLETED] = false
+        }
+    }
+
+    override suspend fun updateAmbientRitual(ritual: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SettingsKeys.AMBIENT_RITUAL] = ritual
+        }
+    }
+
+    override suspend fun updateAmbientBrightness(brightness: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[SettingsKeys.AMBIENT_BRIGHTNESS] = brightness.coerceIn(0.1f, 1f)
         }
     }
 }

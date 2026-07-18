@@ -2,7 +2,6 @@ package com.example.gliphlights.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.gliphlights.models.AppSettings
 import com.example.gliphlights.models.GlyphZone
 import com.example.gliphlights.models.SettingsUiState
 import com.example.gliphlights.models.StartupBehavior
@@ -13,7 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,49 +30,59 @@ class SettingsViewModel @Inject constructor(
 
     private fun observeSettings() {
         viewModelScope.launch {
-            settingsRepository.settings
+            combine(
+                settingsRepository.settings,
+                settingsRepository.ambientRitual,
+                settingsRepository.ambientBrightness
+            ) { settings, ritual, brightness ->
+                SettingsUiState.Success(
+                    settings = settings,
+                    ambientRitual = ritual,
+                    ambientBrightness = brightness
+                )
+            }
                 .catch { e ->
                     _uiState.value = SettingsUiState.Error(e.message ?: "Failed to load settings")
                 }
-                .collect { settings ->
-                    _uiState.value = SettingsUiState.Success(settings)
+                .collect { state ->
+                    _uiState.value = state
                 }
         }
     }
 
     fun updateAnimatePeriod(period: Int) {
-        viewModelScope.launch {
-            settingsRepository.updateAnimatePeriod(period)
-        }
+        viewModelScope.launch { settingsRepository.updateAnimatePeriod(period) }
     }
 
     fun updateAnimateCycles(cycles: Int) {
-        viewModelScope.launch {
-            settingsRepository.updateAnimateCycles(cycles)
-        }
+        viewModelScope.launch { settingsRepository.updateAnimateCycles(cycles) }
     }
 
     fun updateAnimateInterval(interval: Int) {
-        viewModelScope.launch {
-            settingsRepository.updateAnimateInterval(interval)
-        }
+        viewModelScope.launch { settingsRepository.updateAnimateInterval(interval) }
     }
 
     fun updateDefaultZone(zone: GlyphZone?) {
-        viewModelScope.launch {
-            settingsRepository.updateDefaultZone(zone)
-        }
+        viewModelScope.launch { settingsRepository.updateDefaultZone(zone) }
     }
 
     fun updateStartupBehavior(behavior: StartupBehavior) {
-        viewModelScope.launch {
-            settingsRepository.updateStartupBehavior(behavior)
-        }
+        viewModelScope.launch { settingsRepository.updateStartupBehavior(behavior) }
     }
 
     fun updateTheme(theme: ThemePreference) {
-        viewModelScope.launch {
-            settingsRepository.updateTheme(theme)
-        }
+        viewModelScope.launch { settingsRepository.updateTheme(theme) }
+    }
+
+    fun resetTips() {
+        viewModelScope.launch { settingsRepository.resetTips() }
+    }
+
+    fun updateAmbientRitual(ritual: String) {
+        viewModelScope.launch { settingsRepository.updateAmbientRitual(ritual) }
+    }
+
+    fun updateAmbientBrightness(brightness: Float) {
+        viewModelScope.launch { settingsRepository.updateAmbientBrightness(brightness) }
     }
 }

@@ -10,6 +10,8 @@ import com.example.gliphlights.physics.model.PhysicsMode
 import com.example.gliphlights.physics.model.PhysicsParams
 import com.example.gliphlights.physics.sensor.SensorManagerWrapper
 import com.example.gliphlights.repository.GlyphRepository
+import com.example.gliphlights.sdk.GlyphClient
+import com.example.gliphlights.sdk.GlyphSessionArbiter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -41,11 +43,16 @@ data class PhysicsLabUiState(
 class PhysicsLabViewModel @Inject constructor(
     private val sensors: SensorManagerWrapper,
     private val glyphRepository: GlyphRepository,
-    private val settingsRepository: PhysicsSettingsRepository
+    private val settingsRepository: PhysicsSettingsRepository,
+    private val sessionArbiter: GlyphSessionArbiter
 ) : ViewModel() {
 
     private val engine = PhysicsEngine()
-    private val hardware = PhysicsHardwareBridge(glyphRepository, viewModelScope)
+    private val hardware = PhysicsHardwareBridge(
+        glyphRepository,
+        sessionArbiter,
+        viewModelScope
+    )
 
     private val _uiState = MutableStateFlow(PhysicsLabUiState())
     val uiState: StateFlow<PhysicsLabUiState> = _uiState.asStateFlow()
@@ -57,6 +64,14 @@ class PhysicsLabViewModel @Inject constructor(
     private var layoutBound = false
 
     init {
+        hardware.setOnPreempted {
+            _uiState.update {
+                it.copy(
+                    hardwareEnabled = false,
+                    statusMessage = "Glyph taken by another studio tool"
+                )
+            }
+        }
         viewModelScope.launch {
             val saved = settingsRepository.settings.first()
             if (saved != null) {
@@ -72,6 +87,18 @@ class PhysicsLabViewModel @Inject constructor(
             } else {
                 applyModeDefaults(PhysicsMode.GRAVITY, persist = false)
                 _uiState.update { it.copy(settingsLoaded = true) }
+            }
+        }
+        viewModelScope.launch {
+            sessionArbiter.preemptEvents.collect { event ->
+                if (event.victim == GlyphClient.PHYSICS) {
+                    _uiState.update {
+                        it.copy(
+                            hardwareEnabled = false,
+                            statusMessage = event.message
+                        )
+                    }
+                }
             }
         }
     }

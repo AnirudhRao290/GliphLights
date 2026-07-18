@@ -10,6 +10,9 @@ import com.example.gliphlights.editor.model.GlyphNodeLayout
 import com.example.gliphlights.editor.sdk.GlyphSdkRenderer
 import com.example.gliphlights.models.SdkResult
 import com.example.gliphlights.repository.GlyphRepository
+import com.example.gliphlights.repository.PresetRepository
+import com.example.gliphlights.sdk.GlyphClient
+import com.example.gliphlights.sdk.GlyphSessionArbiter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,11 +36,13 @@ data class GlyphEditorUiState(
     val layout: GlyphNodeLayout? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val statusMessage: String? = null,
     val tool: EditorTool = EditorTool.PAINT,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val zoomScale: Float = 1f,
     val showSettings: Boolean = false,
+    val showSaveDialog: Boolean = false,
     val glowIntensity: Float = 1f,
     val hapticsEnabled: Boolean = true,
     val previewPulse: Boolean = false
@@ -46,7 +51,9 @@ data class GlyphEditorUiState(
 @HiltViewModel
 class GlyphEditorViewModel @Inject constructor(
     private val glyphRepository: GlyphRepository,
-    private val sdkRenderer: GlyphSdkRenderer
+    private val sdkRenderer: GlyphSdkRenderer,
+    private val sessionArbiter: GlyphSessionArbiter,
+    private val presetRepository: PresetRepository
 ) : ViewModel() {
 
     companion object {
@@ -65,6 +72,7 @@ class GlyphEditorViewModel @Inject constructor(
 
     init {
         observeSession()
+        observePreempt()
     }
 
     private fun observeSession() {
@@ -75,8 +83,45 @@ class GlyphEditorViewModel @Inject constructor(
         }
     }
 
+    private fun observePreempt() {
+        viewModelScope.launch {
+            sessionArbiter.preemptEvents.collect { event ->
+                if (event.victim == GlyphClient.EDITOR) {
+                    _uiState.update {
+                        it.copy(errorMessage = event.message)
+                    }
+                }
+            }
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun clearStatus() {
+        _uiState.update { it.copy(statusMessage = null) }
+    }
+
+    fun showSaveDialog(show: Boolean) {
+        _uiState.update { it.copy(showSaveDialog = show) }
+    }
+
+    fun saveFrame(name: String) {
+        val channels = _uiState.value.activeChannels
+        if (channels.isEmpty()) {
+            _uiState.update { it.copy(statusMessage = "Paint some nodes first") }
+            return
+        }
+        viewModelScope.launch {
+            val saved = presetRepository.saveEditorFrame(name, channels)
+            _uiState.update {
+                it.copy(
+                    showSaveDialog = false,
+                    statusMessage = "Saved “${saved.name}”"
+                )
+            }
+        }
     }
 
     fun onLayoutCreated(layout: GlyphNodeLayout) {
@@ -302,8 +347,10 @@ class GlyphEditorViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             sdkRenderer.stop()
-            glyphRepository.turnOff()
-            glyphRepository.closeSession()
+            if (glyphRepository.isSessionActive.value) {
+                glyphRepository.turnOff()
+                glyphRepository.closeSession()
+            }
             _uiState.update { it.copy(isLoading = false, isSessionActive = false) }
         }
     }

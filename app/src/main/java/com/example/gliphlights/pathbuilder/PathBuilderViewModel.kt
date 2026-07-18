@@ -3,6 +3,7 @@ package com.example.gliphlights.pathbuilder
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.gliphlights.audio.TapTempo
 import com.example.gliphlights.editor.model.GlyphNodeLayout
 import com.example.gliphlights.models.SdkResult
 import com.example.gliphlights.pathbuilder.model.AnimationModel
@@ -11,6 +12,9 @@ import com.example.gliphlights.pathbuilder.model.PathNode
 import com.example.gliphlights.pathbuilder.model.PathSettings
 import com.example.gliphlights.pathbuilder.model.SavedSequence
 import com.example.gliphlights.repository.GlyphRepository
+import com.example.gliphlights.repository.PresetRepository
+import com.example.gliphlights.sdk.GlyphClient
+import com.example.gliphlights.sdk.GlyphSessionArbiter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,35 +43,89 @@ data class PathBuilderUiState(
     val presets: List<SavedSequence> = PredefinedSequences.all(),
     val savedSequences: List<SavedSequence> = emptyList(),
     val statusMessage: String? = null,
-    val loadedSequenceName: String? = null
+    val loadedSequenceName: String? = null,
+    val tapBpm: Float? = null
 )
 
 @HiltViewModel
 class PathBuilderViewModel @Inject constructor(
     private val glyphRepository: GlyphRepository,
-    private val sequenceRepository: SequenceRepository
+    private val sequenceRepository: SequenceRepository,
+    private val sessionArbiter: GlyphSessionArbiter,
+    private val presetRepository: PresetRepository
 ) : ViewModel() {
 
     private val recorder = PathRecorder()
     private val optimizer = PathOptimizer()
     private val generator = AnimationGenerator()
     private val engine = AnimationEngine(viewModelScope)
-    private val hardwarePlayer = PathHardwarePlayer(glyphRepository, viewModelScope)
+    private val hardwarePlayer = PathHardwarePlayer(
+        glyphRepository,
+        sessionArbiter,
+        viewModelScope
+    )
 
     private var converter: PathConverter? = null
     private val liveTrailBuffer = ArrayList<Offset>(512)
     private val pathHistory = ArrayDeque<List<PathNode>>(32)
     private val pathRedo = ArrayDeque<List<PathNode>>(32)
+    private val tapTempo = TapTempo()
 
     private val _uiState = MutableStateFlow(PathBuilderUiState())
     val uiState: StateFlow<PathBuilderUiState> = _uiState.asStateFlow()
 
     val engineSnapshot: StateFlow<EngineSnapshot> = engine.snapshot
 
+    fun tapTempoBeat() {
+        val bpm = tapTempo.tap()
+        if (bpm == null) {
+            _uiState.update { it.copy(tapBpm = null, statusMessage = "Tap again for BPM…") }
+            return
+        }
+        val current = _uiState.value.settings
+        val quantized = current.copy(
+            nodeDurationMs = tapTempo.nodeDurationForBpm(bpm, current.nodeDurationMs.coerceIn(40L, 400L)),
+            animationSpeed = 1f
+        )
+        _uiState.update {
+            it.copy(
+                settings = quantized,
+                tapBpm = bpm,
+                statusMessage = "Tempo ${bpm.toInt()} BPM — node ${quantized.nodeDurationMs}ms"
+            )
+        }
+        rebuildAnimation(_uiState.value.pathNodes, quantized)
+    }
+
+    fun clearTapTempo() {
+        tapTempo.reset()
+        _uiState.update { it.copy(tapBpm = null) }
+    }
+
     init {
+        hardwarePlayer.setOnPreempted {
+            _uiState.update {
+                it.copy(
+                    hardwareEnabled = false,
+                    statusMessage = "Glyph taken by another studio tool"
+                )
+            }
+        }
         viewModelScope.launch {
             sequenceRepository.savedSequences.collect { saved ->
                 _uiState.update { it.copy(savedSequences = saved) }
+            }
+        }
+        viewModelScope.launch {
+            sessionArbiter.preemptEvents.collect { event ->
+                if (event.victim == GlyphClient.PATH) {
+                    _uiState.update {
+                        it.copy(
+                            hardwareEnabled = false,
+                            statusMessage = event.message
+                        )
+                    }
+                }
             }
         }
     }
@@ -210,6 +268,7 @@ class PathBuilderViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val saved = sequenceRepository.save(name, nodes, _uiState.value.settings)
+            presetRepository.savePath(saved.name, nodes, _uiState.value.settings)
             _uiState.update {
                 it.copy(
                     showSaveDialog = false,

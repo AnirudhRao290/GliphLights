@@ -16,8 +16,12 @@ class AnimationGenerator {
 
         val speed = settings.animationSpeed.coerceIn(0.1f, 4f)
         val nodeDur = (settings.nodeDurationMs / speed).toLong().coerceAtLeast(16L)
-        val fade = (settings.fadeDurationMs / speed).toLong().coerceAtLeast(0L)
-        val step = (nodeDur - fade).coerceAtLeast(1L)
+        val attack = (settings.effectiveAttackMs / speed).toLong().coerceAtLeast(0L)
+        val release = (settings.effectiveReleaseMs / speed).toLong().coerceAtLeast(0L)
+        val sustainRatio = settings.sustainRatio.coerceIn(0.1f, 1f)
+        val sustainMs = (nodeDur * sustainRatio).toLong().coerceAtLeast(1L)
+        // Overlap step so trails connect; keep at least 1ms advance
+        val step = (attack + sustainMs).coerceAtLeast(1L).coerceAtMost(nodeDur)
 
         val frames = ArrayList<AnimationFrame>(path.size)
         var t = 0L
@@ -29,9 +33,9 @@ class AnimationGenerator {
                     startMs = t,
                     durationMs = nodeDur,
                     brightness = settings.brightness.coerceIn(0f, 1f),
-                    fadeInMs = fade,
-                    fadeOutMs = fade,
-                    transition = if (fade > 0) TransitionType.FADE else TransitionType.CUT
+                    fadeInMs = attack.coerceAtMost(nodeDur / 2),
+                    fadeOutMs = release.coerceAtMost(nodeDur / 2),
+                    transition = if (attack > 0 || release > 0) TransitionType.FADE else TransitionType.CUT
                 )
             )
             t += step

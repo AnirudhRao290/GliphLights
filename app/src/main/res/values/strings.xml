@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Glyph Control</string>
+    <string name="app_name">Glyph Studio</string>
     <string name="tile_label">Glyph Toggle</string>
     <string name="widget_description">Quick toggle for Glyph Interface</string>
     <string name="dashboard_title">Dashboard</string>

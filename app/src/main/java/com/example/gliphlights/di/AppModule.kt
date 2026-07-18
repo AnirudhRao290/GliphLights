@@ -54,4 +54,10 @@ abstract class RepositoryModule {
     abstract fun bindPhysicsSettingsRepository(
         impl: com.example.gliphlights.physics.PhysicsSettingsRepositoryImpl
     ): com.example.gliphlights.physics.PhysicsSettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPresetRepository(
+        impl: com.example.gliphlights.repository.PresetRepositoryImpl
+    ): com.example.gliphlights.repository.PresetRepository
 }

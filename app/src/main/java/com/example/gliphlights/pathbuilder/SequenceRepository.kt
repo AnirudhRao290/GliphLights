@@ -29,6 +29,7 @@ interface SequenceRepository {
     suspend fun save(name: String, nodes: List<PathNode>, settings: PathSettings): SavedSequence
     suspend fun delete(id: String)
     suspend fun getById(id: String): SavedSequence?
+    suspend fun fork(id: String, newName: String? = null): SavedSequence?
 }
 
 @Singleton
@@ -72,6 +73,11 @@ class SequenceRepositoryImpl @Inject constructor(
     override suspend fun getById(id: String): SavedSequence? {
         val list = context.sequenceDataStore.data.map { parseList(it[KEY_SEQUENCES].orEmpty()) }.first()
         return list.find { it.id == id }
+    }
+
+    override suspend fun fork(id: String, newName: String?): SavedSequence? {
+        val original = getById(id) ?: return null
+        return save(newName ?: "${original.name} (remix)", original.nodes, original.settings)
     }
 
     private fun serializeList(list: List<SavedSequence>): String {
@@ -139,6 +145,9 @@ class SequenceRepositoryImpl @Inject constructor(
         put("animationSpeed", s.animationSpeed.toDouble())
         put("nodeDurationMs", s.nodeDurationMs)
         put("fadeDurationMs", s.fadeDurationMs)
+        put("attackMs", s.attackMs)
+        put("releaseMs", s.releaseMs)
+        put("sustainRatio", s.sustainRatio.toDouble())
         put("brightness", s.brightness.toDouble())
         put("trailLength", s.trailLength)
         put("trailFade", s.trailFade.toDouble())
@@ -158,6 +167,9 @@ class SequenceRepositoryImpl @Inject constructor(
             animationSpeed = obj.optDouble("animationSpeed", 1.0).toFloat(),
             nodeDurationMs = obj.optLong("nodeDurationMs", 120L),
             fadeDurationMs = obj.optLong("fadeDurationMs", 80L),
+            attackMs = obj.optLong("attackMs", -1L),
+            releaseMs = obj.optLong("releaseMs", -1L),
+            sustainRatio = obj.optDouble("sustainRatio", 0.55).toFloat(),
             brightness = obj.optDouble("brightness", 1.0).toFloat(),
             trailLength = obj.optInt("trailLength", 3),
             trailFade = obj.optDouble("trailFade", 0.55).toFloat(),

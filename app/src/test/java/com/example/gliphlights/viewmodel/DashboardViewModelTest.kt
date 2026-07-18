@@ -39,6 +39,10 @@ class DashboardViewModelTest {
         Dispatchers.setMain(testDispatcher)
         repository = mockk(relaxed = true)
         val settingsRepository = mockk<com.example.gliphlights.repository.SettingsRepository>(relaxed = true)
+        val presetRepository = mockk<com.example.gliphlights.repository.PresetRepository>(relaxed = true)
+        val presetPlayer = mockk<com.example.gliphlights.presets.PresetPlayer>(relaxed = true)
+        val glyphPackShare = mockk<com.example.gliphlights.presets.GlyphPackShare>(relaxed = true)
+        val context = mockk<android.content.Context>(relaxed = true)
 
         coEvery { repository.glyphState } returns glyphStateFlow
         coEvery { repository.deviceInfo } returns deviceInfoFlow
@@ -51,9 +55,18 @@ class DashboardViewModelTest {
         coEvery { repository.toggleAll() } returns SdkResult.Success(Unit)
         coEvery { repository.animateAll(any()) } returns SdkResult.Success(Unit)
         coEvery { repository.turnOff() } returns SdkResult.Success(Unit)
+        coEvery { repository.applyStartupBehavior() } returns Unit
         coEvery { settingsRepository.lastStudioRoute } returns kotlinx.coroutines.flow.flowOf("editor")
+        coEvery { presetRepository.presets } returns kotlinx.coroutines.flow.flowOf(emptyList())
 
-        viewModel = DashboardViewModel(repository, settingsRepository)
+        viewModel = DashboardViewModel(
+            context,
+            repository,
+            settingsRepository,
+            presetRepository,
+            presetPlayer,
+            glyphPackShare
+        )
     }
 
     @After
@@ -76,6 +89,7 @@ class DashboardViewModelTest {
         coVerify { repository.initialize() }
         coVerify { repository.register() }
         coVerify { repository.openSession() }
+        coVerify { repository.applyStartupBehavior() }
     }
 
     @Test

@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,12 +52,15 @@ private enum class SettingsSection(val title: String) {
     APPEARANCE("Appearance"),
     ANIMATION("Animation"),
     PERFORMANCE("Performance"),
+    AMBIENT("Ambient Rituals"),
+    TIPS("Tips"),
     DEVELOPER("Developer"),
     ABOUT("About")
 }
 
 @Composable
 fun SettingsScreen(
+    onReplayTour: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -65,6 +69,8 @@ fun SettingsScreen(
             SettingsSection.APPEARANCE to true,
             SettingsSection.ANIMATION to false,
             SettingsSection.PERFORMANCE to false,
+            SettingsSection.AMBIENT to false,
+            SettingsSection.TIPS to false,
             SettingsSection.DEVELOPER to false,
             SettingsSection.ABOUT to true
         )
@@ -113,6 +119,18 @@ fun SettingsScreen(
                             SettingsSection.PERFORMANCE -> PerformanceSection(
                                 settings = state.settings,
                                 onStartup = viewModel::updateStartupBehavior
+                            )
+                            SettingsSection.AMBIENT -> AmbientSection(
+                                ritual = state.ambientRitual,
+                                brightness = state.ambientBrightness,
+                                onRitual = viewModel::updateAmbientRitual,
+                                onBrightness = viewModel::updateAmbientBrightness
+                            )
+                            SettingsSection.TIPS -> TipsSection(
+                                onResetTips = {
+                                    viewModel.resetTips()
+                                    onReplayTour()
+                                }
                             )
                             SettingsSection.DEVELOPER -> DeveloperSection(
                                 settings = state.settings,
@@ -261,6 +279,47 @@ private fun DeveloperSection(
                 label = { Text("Arc ${zone.name}") }
             )
         }
+    }
+}
+
+@Composable
+private fun AmbientSection(
+    ritual: String,
+    brightness: Float,
+    onRitual: (String) -> Unit,
+    onBrightness: (Float) -> Unit
+) {
+    Text("Ritual", style = MaterialTheme.typography.bodyMedium)
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("WAKE", "FOCUS", "WIND_DOWN", "CHARGING").forEach { id ->
+            FilterChip(
+                selected = ritual == id,
+                onClick = { onRitual(id) },
+                label = { Text(id.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }) }
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    SettingsSliderRow(
+        "Brightness ceiling",
+        "${(brightness * 100).toInt()}%",
+        brightness,
+        0.1f..1f,
+        onBrightness
+    )
+}
+
+@Composable
+private fun TipsSection(onResetTips: () -> Unit) {
+    Text(
+        "Replay the guided doughnut tour that lights arcs A → B → C on first launch.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    TextButton(onClick = onResetTips) {
+        Text("Reset tips & replay tour")
     }
 }
 

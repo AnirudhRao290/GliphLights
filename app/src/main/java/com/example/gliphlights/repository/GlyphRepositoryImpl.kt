@@ -5,6 +5,7 @@ import com.example.gliphlights.models.DeviceInfo
 import com.example.gliphlights.models.GlyphState
 import com.example.gliphlights.models.GlyphZone
 import com.example.gliphlights.models.SdkResult
+import com.example.gliphlights.models.StartupBehavior
 import com.example.gliphlights.sdk.GlyphManagerWrapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,17 +15,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class GlyphRepositoryImpl @Inject constructor(
-    private val glyphManager: GlyphManagerWrapper
+    private val glyphManager: GlyphManagerWrapper,
+    private val settingsRepository: SettingsRepository
 ) : GlyphRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val startupMutex = Mutex()
+    private var startupRestoreAttempted = false
 
     private val _isConnected = MutableStateFlow(false)
     override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
@@ -54,36 +60,61 @@ class GlyphRepositoryImpl @Inject constructor(
 
     override suspend fun toggleAll(): SdkResult<Unit> {
         val allChannels = GlyphZone.A.channels + GlyphZone.B.channels + GlyphZone.C.channels
-        return glyphManager.toggleChannels(allChannels)
+        return glyphManager.toggleChannels(allChannels).also { rememberCurrentChannels(it) }
     }
 
     override suspend fun toggleChannels(channels: List<Int>): SdkResult<Unit> =
-        glyphManager.toggleChannels(channels)
+        glyphManager.toggleChannels(channels).also { rememberCurrentChannels(it) }
 
     override suspend fun setChannels(channels: List<Int>): SdkResult<Unit> =
-        glyphManager.setChannels(channels)
+        glyphManager.setChannels(channels).also { rememberCurrentChannels(it) }
 
     override suspend fun animateAll(params: AnimationParams): SdkResult<Unit> {
         val allChannels = GlyphZone.A.channels + GlyphZone.B.channels + GlyphZone.C.channels
-        return glyphManager.animateChannels(allChannels, params)
+        return glyphManager.animateChannels(allChannels, params).also { rememberCurrentChannels(it) }
     }
 
     override suspend fun animateChannels(channels: List<Int>, params: AnimationParams): SdkResult<Unit> =
-        glyphManager.animateChannels(channels, params)
+        glyphManager.animateChannels(channels, params).also { rememberCurrentChannels(it) }
 
     override suspend fun displayProgress(progress: Int, reverse: Boolean): SdkResult<Unit> =
         glyphManager.displayProgress(progress, reverse)
 
-    override suspend fun turnOff(): SdkResult<Unit> = glyphManager.turnOff()
+    override suspend fun turnOff(): SdkResult<Unit> =
+        glyphManager.turnOff().also { rememberCurrentChannels(it) }
+
+    override suspend fun turnOffPreservingLastState(): SdkResult<Unit> =
+        glyphManager.turnOff()
 
     override suspend fun turnOffChannels(channels: List<Int>): SdkResult<Unit> =
-        glyphManager.turnOffChannels(channels)
+        glyphManager.turnOffChannels(channels).also { rememberCurrentChannels(it) }
 
     override suspend fun toggleWithBrightness(channels: List<Int>, brightness: Float): SdkResult<Unit> =
-        glyphManager.toggleWithBrightness(channels, brightness)
+        glyphManager.toggleWithBrightness(channels, brightness).also { rememberCurrentChannels(it) }
+
+    override suspend fun applyStartupBehavior() {
+        startupMutex.withLock {
+            if (startupRestoreAttempted) return
+            startupRestoreAttempted = true
+
+            val behavior = settingsRepository.settings.first().startupBehavior
+            if (behavior != StartupBehavior.SHOW_LAST_STATE) return
+
+            val channels = settingsRepository.lastActiveChannels.first()
+            if (channels.isEmpty()) return
+
+            setChannels(channels.toList())
+        }
+    }
 
     override suspend fun cleanup() {
         glyphManager.cleanup()
         scope.cancel()
+    }
+
+    private suspend fun rememberCurrentChannels(result: SdkResult<Unit>) {
+        if (result is SdkResult.Success) {
+            settingsRepository.updateLastActiveChannels(glyphState.value.activeChannels)
+        }
     }
 }

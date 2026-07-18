@@ -23,7 +23,17 @@ interface GlyphRepository {
     suspend fun animateChannels(channels: List<Int>, params: AnimationParams = AnimationParams()): SdkResult<Unit>
     suspend fun displayProgress(progress: Int, reverse: Boolean = false): SdkResult<Unit>
     suspend fun turnOff(): SdkResult<Unit>
+    /**
+     * Turns lights off without clearing the persisted last-state used by
+     * [com.example.gliphlights.models.StartupBehavior.SHOW_LAST_STATE].
+     */
+    suspend fun turnOffPreservingLastState(): SdkResult<Unit>
     suspend fun turnOffChannels(channels: List<Int>): SdkResult<Unit>
     suspend fun toggleWithBrightness(channels: List<Int>, brightness: Float): SdkResult<Unit>
+    /**
+     * Once per process: if startup behavior is SHOW_LAST_STATE, restore the last
+     * active Glyph channels onto hardware. No-op when DO_NOTHING or nothing saved.
+     */
+    suspend fun applyStartupBehavior()
     suspend fun cleanup()
 }

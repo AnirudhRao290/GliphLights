@@ -21,7 +21,11 @@ sealed class ControlsUiState {
 
 sealed class SettingsUiState {
     data object Loading : SettingsUiState()
-    data class Success(val settings: AppSettings) : SettingsUiState()
+    data class Success(
+        val settings: AppSettings,
+        val ambientRitual: String = "FOCUS",
+        val ambientBrightness: Float = 0.45f
+    ) : SettingsUiState()
     data class Error(val message: String) : SettingsUiState()
 }
 

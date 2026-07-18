@@ -173,6 +173,7 @@ fun PathBuilderScreen(
                 hasPath = uiState.pathNodes.isNotEmpty(),
                 hardwareEnabled = uiState.hardwareEnabled,
                 hardwareBusy = uiState.hardwareBusy,
+                tapBpm = uiState.tapBpm,
                 onDraw = { viewModel.setDrawMode(true) },
                 onPreview = {
                     viewModel.setDrawMode(false)
@@ -187,7 +188,8 @@ fun PathBuilderScreen(
                 onRedo = viewModel::redo,
                 onAdvanced = viewModel::toggleAdvancedOps,
                 onPlayOnGlyph = viewModel::playOnGlyph,
-                onStopHardware = viewModel::stopHardware
+                onStopHardware = viewModel::stopHardware,
+                onTapTempo = viewModel::tapTempoBeat
             )
         }
     }
@@ -286,6 +288,7 @@ private fun PathPrimaryBar(
     hasPath: Boolean,
     hardwareEnabled: Boolean,
     hardwareBusy: Boolean,
+    tapBpm: Float?,
     onDraw: () -> Unit,
     onPreview: () -> Unit,
     onPlayPause: () -> Unit,
@@ -294,7 +297,8 @@ private fun PathPrimaryBar(
     onRedo: () -> Unit,
     onAdvanced: () -> Unit,
     onPlayOnGlyph: () -> Unit,
-    onStopHardware: () -> Unit
+    onStopHardware: () -> Unit,
+    onTapTempo: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -313,6 +317,11 @@ private fun PathPrimaryBar(
                 selected = isPlaying,
                 onClick = onPlayPause,
                 label = { Text(if (isPlaying) "Pause" else "Play") }
+            )
+            FilterChip(
+                selected = tapBpm != null,
+                onClick = onTapTempo,
+                label = { Text(if (tapBpm != null) "${tapBpm.toInt()} BPM" else "Tap") }
             )
             Spacer(modifier = Modifier.weight(1f))
             TextButton(onClick = onUndo, enabled = canUndo) { Text("Undo") }
@@ -553,7 +562,24 @@ private fun PathSettingsSheet(
             onChange(settings.copy(nodeDurationMs = it.toLong()))
         }
         SettingsSlider("Fade Duration (ms)", settings.fadeDurationMs.toFloat(), 0f..250f) {
-            onChange(settings.copy(fadeDurationMs = it.toLong()))
+            onChange(settings.copy(fadeDurationMs = it.toLong(), attackMs = -1L, releaseMs = -1L))
+        }
+        SettingsSlider(
+            "Attack (ms)",
+            settings.effectiveAttackMs.toFloat(),
+            0f..250f
+        ) {
+            onChange(settings.copy(attackMs = it.toLong()))
+        }
+        SettingsSlider(
+            "Release (ms)",
+            settings.effectiveReleaseMs.toFloat(),
+            0f..250f
+        ) {
+            onChange(settings.copy(releaseMs = it.toLong()))
+        }
+        SettingsSlider("Sustain ratio", settings.sustainRatio, 0.1f..1f) {
+            onChange(settings.copy(sustainRatio = it))
         }
         SettingsSlider("Brightness", settings.brightness, 0.1f..1f) {
             onChange(settings.copy(brightness = it))

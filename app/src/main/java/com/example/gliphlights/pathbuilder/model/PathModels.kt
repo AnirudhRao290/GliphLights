@@ -41,6 +41,12 @@ data class PathSettings(
     val animationSpeed: Float = 1f,
     val nodeDurationMs: Long = 120L,
     val fadeDurationMs: Long = 80L,
+    /** Attack (fade-in). When &lt; 0, falls back to [fadeDurationMs]. */
+    val attackMs: Long = -1L,
+    /** Release (fade-out). When &lt; 0, falls back to [fadeDurationMs]. */
+    val releaseMs: Long = -1L,
+    /** Fraction of node duration spent at full brightness after attack (0–1). */
+    val sustainRatio: Float = 0.55f,
     val brightness: Float = 1f,
     val trailLength: Int = 3,
     val trailFade: Float = 0.55f,
@@ -53,6 +59,12 @@ data class PathSettings(
     val samplingDensityPx: Float = 4f,
     val minimumNodeDistance: Int = 1
 ) {
+    val effectiveAttackMs: Long
+        get() = if (attackMs >= 0) attackMs else fadeDurationMs
+
+    val effectiveReleaseMs: Long
+        get() = if (releaseMs >= 0) releaseMs else fadeDurationMs
+
     val playbackMode: PlaybackMode
         get() = when {
             pingPong -> PlaybackMode.PING_PONG

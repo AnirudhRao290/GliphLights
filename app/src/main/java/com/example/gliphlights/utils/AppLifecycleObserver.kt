@@ -29,9 +29,10 @@ class AppLifecycleObserver @Inject constructor(
     override fun onStop(owner: LifecycleOwner) {
         super.onStop(owner)
         // Turn lights off when backgrounded, but keep the session so Editor can resume.
+        // Preserve last-state so SHOW_LAST_STATE can restore lit channels on cold start.
         scope.launch {
             if (glyphRepository.isSessionActive.value) {
-                glyphRepository.turnOff()
+                glyphRepository.turnOffPreservingLastState()
             }
         }
     }
