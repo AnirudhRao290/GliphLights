@@ -3,8 +3,9 @@ package com.example.gliphlights.ui.screens
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,30 +18,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,7 +45,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.gliphlights.viewmodel.MusicVisualizerUiState
+import com.example.gliphlights.editor.model.GlyphDoughnut3a
+import com.example.gliphlights.editor.model.GlyphRegion
+import com.example.gliphlights.ui.components.GlassMetricCard
+import com.example.gliphlights.ui.components.GlassPill
+import com.example.gliphlights.ui.components.StudioGrainOverlay
+import com.example.gliphlights.ui.visualizer.VisualizerHeroStage
 import com.example.gliphlights.viewmodel.MusicVisualizerViewModel
 import com.example.gliphlights.viewmodel.VisualizationModeType
 
@@ -57,6 +59,7 @@ fun MusicVisualizerScreen(
     viewModel: MusicVisualizerViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var showAdvanced by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -64,263 +67,178 @@ fun MusicVisualizerScreen(
         viewModel.onPermissionResult(granted)
     }
 
-    Column(
+    val fills = remember(uiState.audioLevel, uiState.isRunning, uiState.mode) {
+        if (!uiState.isRunning) FloatArray(36)
+        else tubeFillsFromAudio(uiState.audioLevel, uiState.mode)
+    }
+
+    val bass = remember(uiState.audioLevel, uiState.peakAmplitude) {
+        ((uiState.audioLevel * 0.65f + uiState.peakAmplitude * 0.35f) * 100f).toInt().coerceIn(0, 100)
+    }
+    val treble = remember(uiState.audioLevel, uiState.rawAmplitude) {
+        ((uiState.rawAmplitude * 0.8f + uiState.audioLevel * 0.2f) * 100f).toInt().coerceIn(0, 100)
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(Color.Black)
     ) {
-        Text(
-            text = "Music Visualizer",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        StudioGrainOverlay(alpha = 0.10f)
 
-        if (!uiState.hasPermission && !uiState.permissionRequested) {
-            PermissionExplanationCard(
-                onRequestPermission = {
-                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            )
-        } else if (!uiState.hasPermission) {
-            PermissionDeniedCard()
-        }
-
-        ControlCard(
-            isRunning = uiState.isRunning,
-            onStart = {
-                if (!uiState.hasPermission) {
-                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                } else {
-                    viewModel.start()
-                }
-            },
-            onStop = viewModel::stop
-        )
-
-        ModeSelectorCard(
-            selectedMode = uiState.mode,
-            onModeSelected = viewModel::selectMode,
-            isRunning = uiState.isRunning
-        )
-
-        SliderCard(
-            title = "Sensitivity",
-            value = uiState.sensitivity,
-            valueRange = 0.1f..3.0f,
-            onValueChange = viewModel::updateSensitivity,
-            valueLabel = "%.1fx".format(uiState.sensitivity)
-        )
-
-        SliderCard(
-            title = "Noise Gate",
-            value = uiState.noiseGate,
-            valueRange = 0.0f..0.3f,
-            onValueChange = viewModel::updateNoiseGate,
-            valueLabel = "%.2f".format(uiState.noiseGate)
-        )
-
-        AudioLevelCard(audioLevel = uiState.audioLevel)
-
-        StatusCard(
-            fps = uiState.fps,
-            updateRate = uiState.updateRate,
-            latency = uiState.latency,
-            isRunning = uiState.isRunning
-        )
-
-        DebugOverlayButton(
-            showDebug = uiState.showDebug,
-            onToggle = viewModel::toggleDebug
-        )
-
-        if (uiState.showDebug) {
-            DebugCard(
-                rawAmplitude = uiState.rawAmplitude,
-                filteredAmplitude = uiState.audioLevel,
-                peakAmplitude = uiState.peakAmplitude,
-                latency = uiState.latency
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun PermissionExplanationCard(onRequestPermission: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Microphone Access Required",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "The music visualizer needs microphone access to capture audio and drive the Glyph lights in real-time.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = onRequestPermission) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Grant Permission")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionDeniedCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Permission Denied",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Please enable microphone access in app settings to use the visualizer.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ControlCard(
-    isRunning: Boolean,
-    onStart: () -> Unit,
-    onStop: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Button(
-                onClick = onStart,
-                modifier = Modifier.weight(1f).height(56.dp),
-                enabled = !isRunning,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Start")
-            }
-
-            Button(
-                onClick = onStop,
-                modifier = Modifier.weight(1f).height(56.dp),
-                enabled = isRunning,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Stop,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Stop")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModeSelectorCard(
-    selectedMode: VisualizationModeType,
-    onModeSelected: (VisualizationModeType) -> Unit,
-    isRunning: Boolean
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Visualization Mode",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Visualizer",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
             )
+
             Spacer(modifier = Modifier.height(12.dp))
+
+            if (!uiState.hasPermission) {
+                PermissionBanner(
+                    denied = uiState.permissionRequested,
+                    onRequest = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                VisualizerHeroStage(
+                    channelFills = fills,
+                    audioLevel = if (uiState.isRunning) uiState.audioLevel else 0.12f,
+                    spectrumSeed = (uiState.audioLevel * 1000).toInt(),
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                GlassPill(
+                    text = "${uiState.mode.displayName} Mode",
+                    leadingDot = Color(0xFFB44DFF),
+                    accent = Color(0xFFE0B0FF),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                )
+                GlassPill(
+                    text = "${uiState.fps.toInt().coerceAtLeast(0)} FPS",
+                    accent = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                GlassMetricCard(
+                    title = "Bass",
+                    value = "$bass%",
+                    dotColor = Color(0xFFB44DFF),
+                    modifier = Modifier.weight(1f)
+                )
+                GlassMetricCard(
+                    title = "Treble",
+                    value = "$treble%",
+                    dotColor = Color(0xFF5B8CFF),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                VisualizationModeType.entries.forEach { mode ->
+                    FilterChip(
+                        selected = uiState.mode == mode,
+                        onClick = { viewModel.selectMode(mode) },
+                        label = { Text(mode.displayName) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                VisualizationModeType.entries.forEach { mode ->
-                    val isSelected = mode == selectedMode
-                    FilledTonalButton(
-                        onClick = { onModeSelected(mode) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            contentColor = if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    ) {
-                        Text(
-                            text = mode.displayName,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1
-                        )
-                    }
+                Button(
+                    onClick = {
+                        if (!uiState.hasPermission) {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            viewModel.start()
+                        }
+                    },
+                    enabled = !uiState.isRunning,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Start")
+                }
+                OutlinedButton(
+                    onClick = viewModel::stop,
+                    enabled = uiState.isRunning,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.Stop, null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Stop")
+                }
+            }
+
+            TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                Text(if (showAdvanced) "Hide tuning" else "Tuning")
+            }
+
+            AnimatedVisibility(visible = showAdvanced) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF1A1A1A))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Sensitivity ${"%.1f".format(uiState.sensitivity)}x", color = Color.White)
+                    Slider(
+                        value = uiState.sensitivity,
+                        onValueChange = viewModel::updateSensitivity,
+                        valueRange = 0.1f..3f
+                    )
+                    Text("Noise gate ${"%.2f".format(uiState.noiseGate)}", color = Color.White)
+                    Slider(
+                        value = uiState.noiseGate,
+                        onValueChange = viewModel::updateNoiseGate,
+                        valueRange = 0f..0.3f
+                    )
                 }
             }
         }
@@ -328,234 +246,79 @@ private fun ModeSelectorCard(
 }
 
 @Composable
-private fun SliderCard(
-    title: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-    valueLabel: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = valueLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Slider(
-                value = value,
-                onValueChange = onValueChange,
-                valueRange = valueRange,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun AudioLevelCard(audioLevel: Float) {
-    val animatedLevel by animateFloatAsState(
-        targetValue = audioLevel,
-        label = "audioLevel"
-    )
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Audio Level",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "%.0f%%".format(audioLevel * 100),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { animatedLevel },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(6.dp)),
-                color = when {
-                    audioLevel > 0.7f -> MaterialTheme.colorScheme.error
-                    audioLevel > 0.4f -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.primary
-                },
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatusCard(
-    fps: Float,
-    updateRate: Int,
-    latency: Long,
-    isRunning: Boolean
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Status",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatusItem(
-                    label = "FPS",
-                    value = if (isRunning) "%.1f".format(fps) else "0.0",
-                    isActive = isRunning
-                )
-                StatusItem(
-                    label = "Rate",
-                    value = if (isRunning) "${updateRate}/s" else "0/s",
-                    isActive = isRunning
-                )
-                StatusItem(
-                    label = "Latency",
-                    value = if (isRunning) "${latency}ms" else "0ms",
-                    isActive = isRunning
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusItem(label: String, value: String, isActive: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (isActive) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
-    }
-}
-
-@Composable
-private fun DebugOverlayButton(showDebug: Boolean, onToggle: () -> Unit) {
-    OutlinedButton(
-        onClick = onToggle,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.BugReport,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text = if (showDebug) "Hide Debug" else "Show Debug")
-    }
-}
-
-@Composable
-private fun DebugCard(
-    rawAmplitude: Float,
-    filteredAmplitude: Float,
-    peakAmplitude: Float,
-    latency: Long
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Debug Info",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            DebugRow("Raw Amplitude", "%.4f".format(rawAmplitude))
-            DebugRow("Filtered", "%.4f".format(filteredAmplitude))
-            DebugRow("Peak", "%.4f".format(peakAmplitude))
-            DebugRow("Processing", "${latency}ms")
-        }
-    }
-}
-
-@Composable
-private fun DebugRow(label: String, value: String) {
-    Row(
+private fun PermissionBanner(denied: Boolean, onRequest: () -> Unit) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (denied) Color(0xFF3A1515) else Color(0xFF1A1A28))
+            .padding(14.dp)
     ) {
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            text = if (denied) "Microphone blocked" else "Microphone needed",
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White
         )
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface
+            text = if (denied) "Enable mic access in system settings."
+            else "Visualizer listens on-device to drive Glyph tubes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.7f)
         )
+        if (!denied) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onRequest) {
+                Icon(Icons.Default.Mic, null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Grant access")
+            }
+        }
     }
+}
+
+private fun tubeFillsFromAudio(level: Float, mode: VisualizationModeType): FloatArray {
+    val fills = FloatArray(36)
+    val energy = level.coerceIn(0f, 1f)
+    if (energy < 0.02f) return fills
+
+    val order = GlyphDoughnut3a.clockwiseIds
+    val sdkById = buildMap {
+        GlyphRegion.entries.forEach { region ->
+            repeat(region.nodeCount) { i ->
+                put("${region.name}${i + 1}", region.sdkIndex(i))
+            }
+        }
+    }
+
+    when (mode) {
+        VisualizationModeType.PULSE, VisualizationModeType.GLOW -> {
+            val lit = (energy * 36f).toInt().coerceIn(1, 36)
+            val partial = (energy * 36f) - lit + 1f
+            for (i in 0 until lit) {
+                val sdk = sdkById[order[i % order.size]] ?: continue
+                fills[sdk] = if (i == lit - 1) partial.coerceIn(0.2f, 1f) else 1f
+            }
+        }
+        VisualizationModeType.WAVE -> {
+            val head = ((energy * order.size).toInt()).coerceIn(0, order.size - 1)
+            for (t in 0 until 7) {
+                val idx = (head - t + order.size) % order.size
+                val sdk = sdkById[order[idx]] ?: continue
+                fills[sdk] = (1f - t / 7f) * energy.coerceAtLeast(0.4f)
+            }
+        }
+        VisualizationModeType.BEAT -> {
+            if (energy >= 0.35f) {
+                listOf("A9", "A10", "A11", "B1", "B2", "B3", "B4", "B5", "C1", "C2", "C3").forEach { id ->
+                    sdkById[id]?.let { fills[it] = energy }
+                }
+            } else {
+                listOf("B1", "B2", "B3").forEach { id ->
+                    sdkById[id]?.let { fills[it] = energy * 0.45f }
+                }
+            }
+        }
+    }
+    return fills
 }

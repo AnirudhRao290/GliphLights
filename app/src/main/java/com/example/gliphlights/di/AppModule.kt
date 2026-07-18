@@ -42,4 +42,16 @@ abstract class RepositoryModule {
     abstract fun bindSettingsRepository(
         impl: SettingsRepositoryImpl
     ): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSequenceRepository(
+        impl: com.example.gliphlights.pathbuilder.SequenceRepositoryImpl
+    ): com.example.gliphlights.pathbuilder.SequenceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPhysicsSettingsRepository(
+        impl: com.example.gliphlights.physics.PhysicsSettingsRepositoryImpl
+    ): com.example.gliphlights.physics.PhysicsSettingsRepository
 }

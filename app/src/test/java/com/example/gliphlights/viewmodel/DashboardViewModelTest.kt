@@ -38,6 +38,7 @@ class DashboardViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         repository = mockk(relaxed = true)
+        val settingsRepository = mockk<com.example.gliphlights.repository.SettingsRepository>(relaxed = true)
 
         coEvery { repository.glyphState } returns glyphStateFlow
         coEvery { repository.deviceInfo } returns deviceInfoFlow
@@ -50,8 +51,9 @@ class DashboardViewModelTest {
         coEvery { repository.toggleAll() } returns SdkResult.Success(Unit)
         coEvery { repository.animateAll(any()) } returns SdkResult.Success(Unit)
         coEvery { repository.turnOff() } returns SdkResult.Success(Unit)
+        coEvery { settingsRepository.lastStudioRoute } returns kotlinx.coroutines.flow.flowOf("editor")
 
-        viewModel = DashboardViewModel(repository)
+        viewModel = DashboardViewModel(repository, settingsRepository)
     }
 
     @After

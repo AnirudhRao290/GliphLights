@@ -26,16 +26,19 @@ object SettingsKeys {
     val DEFAULT_ZONE = stringPreferencesKey("default_zone")
     val STARTUP_BEHAVIOR = stringPreferencesKey("startup_behavior")
     val THEME = stringPreferencesKey("theme")
+    val LAST_STUDIO_ROUTE = stringPreferencesKey("last_studio_route")
 }
 
 interface SettingsRepository {
     val settings: Flow<AppSettings>
+    val lastStudioRoute: Flow<String>
     suspend fun updateAnimatePeriod(period: Int)
     suspend fun updateAnimateCycles(cycles: Int)
     suspend fun updateAnimateInterval(interval: Int)
     suspend fun updateDefaultZone(zone: GlyphZone?)
     suspend fun updateStartupBehavior(behavior: StartupBehavior)
     suspend fun updateTheme(theme: ThemePreference)
+    suspend fun updateLastStudioRoute(route: String)
 }
 
 @Singleton
@@ -70,6 +73,10 @@ class SettingsRepositoryImpl @Inject constructor(
                 }
             } ?: ThemePreference.SYSTEM
         )
+    }
+
+    override val lastStudioRoute: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SettingsKeys.LAST_STUDIO_ROUTE] ?: "editor"
     }
 
     override suspend fun updateAnimatePeriod(period: Int) {
@@ -109,6 +116,12 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun updateTheme(theme: ThemePreference) {
         context.dataStore.edit { preferences ->
             preferences[SettingsKeys.THEME] = theme.name
+        }
+    }
+
+    override suspend fun updateLastStudioRoute(route: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SettingsKeys.LAST_STUDIO_ROUTE] = route
         }
     }
 }

@@ -1,6 +1,9 @@
 package com.example.gliphlights.ui.screens
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,102 +14,152 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.gliphlights.models.DeviceInfo
 import com.example.gliphlights.models.ErrorState
 import com.example.gliphlights.models.GlyphState
 import com.example.gliphlights.models.GlyphUiState
-import com.example.gliphlights.models.GlyphZone
+import com.example.gliphlights.ui.components.ContinueEditingCard
+import com.example.gliphlights.ui.components.LiveHeroCard
+import com.example.gliphlights.ui.components.QuickActionChip
+import com.example.gliphlights.ui.components.QuickToolTile
+import com.example.gliphlights.ui.components.ScreenHeader
+import com.example.gliphlights.ui.components.SectionLabel
+import com.example.gliphlights.viewmodel.DashboardHeroState
 import com.example.gliphlights.viewmodel.DashboardViewModel
+import com.example.gliphlights.viewmodel.StudioDestination
 
 @Composable
 fun DashboardScreen(
+    onNavigateToEditor: () -> Unit = {},
+    onNavigateToPathBuilder: () -> Unit = {},
+    onNavigateToPhysicsLab: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val errorState by viewModel.errorState.collectAsState()
+    val heroState by viewModel.heroState.collectAsState()
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header
-        Text(
-            text = "Glyph Control",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        AnimatedContent(
+            targetState = uiState,
+            contentKey = { it::class },
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "dashboardState"
+        ) { state ->
+            when (state) {
+                is GlyphUiState.Loading -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Preparing studio…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
-        Spacer(modifier = Modifier.height(8.dp))
+                is GlyphUiState.Success -> {
+                    DashboardContent(
+                        glyphState = state.glyphState,
+                        deviceInfo = state.deviceInfo,
+                        heroState = heroState,
+                        onToggleAll = viewModel::toggleAll,
+                        onAnimateAll = viewModel::animateAll,
+                        onTurnOff = viewModel::turnOff,
+                        onContinue = {
+                            val dest = heroState.continueDestination
+                            viewModel.rememberStudio(dest)
+                            when (dest.route) {
+                                StudioDestination.PathBuilder.route -> onNavigateToPathBuilder()
+                                StudioDestination.PhysicsLab.route -> onNavigateToPhysicsLab()
+                                else -> onNavigateToEditor()
+                            }
+                        },
+                        onOpenStudio = { destination ->
+                            viewModel.rememberStudio(destination)
+                            when (destination.route) {
+                                StudioDestination.PathBuilder.route -> onNavigateToPathBuilder()
+                                StudioDestination.PhysicsLab.route -> onNavigateToPhysicsLab()
+                                else -> onNavigateToEditor()
+                            }
+                        }
+                    )
+                }
 
-        when (val state = uiState) {
-            is GlyphUiState.Loading -> {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(48.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Connecting to Glyph SDK...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                )
-            }
-
-            is GlyphUiState.Success -> {
-                DashboardContent(
-                    glyphState = state.glyphState,
-                    deviceInfo = state.deviceInfo,
-                    onToggleAll = viewModel::toggleAll,
-                    onAnimateAll = viewModel::animateAll,
-                    onTurnOff = viewModel::turnOff
-                )
-            }
-
-            is GlyphUiState.Error -> {
-                ErrorContent(
-                    message = state.message,
-                    onRetry = { viewModel.clearError() }
-                )
+                is GlyphUiState.Error -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Couldn't connect",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = state.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(onClick = viewModel::clearError) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
             }
         }
 
-        // Error snackbar
         if (errorState !is ErrorState.None) {
-            ErrorSnackbar(
-                errorState = errorState,
-                onDismiss = viewModel::clearError
-            )
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                action = {
+                    TextButton(onClick = viewModel::clearError) { Text("OK") }
+                }
+            ) {
+                Text(
+                    when (val e = errorState) {
+                        is ErrorState.SdkUnavailable -> e.message
+                        is ErrorState.RuntimeError -> e.message
+                        else -> "Something went wrong"
+                    }
+                )
+            }
         }
     }
 }
@@ -115,325 +168,94 @@ fun DashboardScreen(
 private fun DashboardContent(
     glyphState: GlyphState,
     deviceInfo: DeviceInfo,
+    heroState: DashboardHeroState,
     onToggleAll: () -> Unit,
     onAnimateAll: () -> Unit,
-    onTurnOff: () -> Unit
+    onTurnOff: () -> Unit,
+    onContinue: () -> Unit,
+    onOpenStudio: (StudioDestination) -> Unit
 ) {
+    val secondaryTools = StudioDestination.all.filter {
+        it.route != heroState.continueDestination.route
+    }
+
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Device Info Card
-        DeviceInfoCard(deviceInfo = deviceInfo)
-
-        // Glyph Status Card
-        GlyphStatusCard(glyphState = glyphState)
-
-        // Active Zones Card
-        ActiveZonesCard(activeZones = glyphState.activeZones)
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Action Buttons
-        ActionButtons(
-            onToggleAll = onToggleAll,
-            onAnimateAll = onAnimateAll,
-            onTurnOff = onTurnOff
+        ScreenHeader(
+            title = "Glyph Studio",
+            subtitle = "Design · Animate · Perform"
         )
-    }
-}
 
-@Composable
-private fun DeviceInfoCard(deviceInfo: DeviceInfo) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Device",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        LiveHeroCard(
+            glyphState = glyphState,
+            deviceInfo = deviceInfo,
+            activityMode = heroState.activityMode,
+            fps = heroState.fps,
+            onPower = { if (glyphState.isActive) onTurnOff() else onToggleAll() }
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionLabel("Workspace")
+            ContinueEditingCard(
+                destination = heroState.continueDestination,
+                onClick = onContinue
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = deviceInfo.model,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (deviceInfo.isSupported) {
-                Text(
-                    text = "SDK Ready",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF4CAF50)
-                )
-            } else {
-                Text(
-                    text = "Not Supported",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun GlyphStatusCard(glyphState: GlyphState) {
-    val indicatorColor by animateColorAsState(
-        targetValue = if (glyphState.isActive) Color(0xFF4CAF50) else Color(0xFF757575),
-        label = "indicatorColor"
-    )
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "Glyph Status",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (glyphState.isActive) "Active" else "Inactive",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(indicatorColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (glyphState.isActive) Icons.Default.Lightbulb else Icons.Default.PowerSettingsNew,
-                    contentDescription = if (glyphState.isActive) "Active" else "Inactive",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActiveZonesCard(activeZones: Set<GlyphZone>) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Active Zones",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                GlyphZone.entries.forEach { zone ->
-                    ZoneChip(
-                        zone = zone,
-                        isActive = zone in activeZones
+                secondaryTools.forEach { dest ->
+                    QuickToolTile(
+                        title = when (dest.route) {
+                            StudioDestination.PathBuilder.route -> "Paths"
+                            StudioDestination.PhysicsLab.route -> "Physics"
+                            else -> "Editor"
+                        },
+                        icon = when (dest.route) {
+                            StudioDestination.PathBuilder.route -> Icons.Default.Create
+                            StudioDestination.PhysicsLab.route -> Icons.Default.Science
+                            else -> Icons.Default.Lightbulb
+                        },
+                        onClick = { onOpenStudio(dest) },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
         }
-    }
-}
 
-@Composable
-private fun ZoneChip(zone: GlyphZone, isActive: Boolean) {
-    val backgroundColor by animateColorAsState(
-        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        label = "zoneChipColor"
-    )
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(backgroundColor)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Zone ${zone.name}",
-            style = MaterialTheme.typography.labelMedium,
-            color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun ActionButtons(
-    onToggleAll: () -> Unit,
-    onAnimateAll: () -> Unit,
-    onTurnOff: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Button(
-            onClick = onToggleAll,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Lightbulb,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Toggle All",
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
-
-        Button(
-            onClick = onAnimateAll,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary
-            )
-        ) {
-            Text(
-                text = "Animate All",
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
-
-        OutlinedButton(
-            onClick = onTurnOff,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.PowerSettingsNew,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Turn Off",
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
-    }
-}
-
-@Composable
-private fun ErrorContent(
-    message: String,
-    onRetry: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.PowerSettingsNew,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.error
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "Connection Error",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRetry) {
-            Text(text = "Retry")
-        }
-    }
-}
-
-@Composable
-private fun ErrorSnackbar(
-    errorState: ErrorState,
-    onDismiss: () -> Unit
-) {
-    val message = when (errorState) {
-        is ErrorState.SdkUnavailable -> errorState.message
-        is ErrorState.UnsupportedDevice -> errorState.message
-        is ErrorState.PermissionDenied -> errorState.message
-        is ErrorState.RuntimeError -> errorState.message
-        is ErrorState.None -> return
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.weight(1f)
-            )
-            Button(onClick = onDismiss) {
-                Text(text = "OK")
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionLabel("Quick actions")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                QuickActionChip(
+                    label = if (glyphState.isActive) "All off" else "All on",
+                    icon = Icons.Default.Lightbulb,
+                    onClick = onToggleAll,
+                    selected = glyphState.isActive,
+                    modifier = Modifier.weight(1f)
+                )
+                QuickActionChip(
+                    label = "Animate",
+                    icon = Icons.Default.Refresh,
+                    onClick = onAnimateAll,
+                    modifier = Modifier.weight(1f)
+                )
+                QuickActionChip(
+                    label = "Off",
+                    icon = Icons.Default.PowerSettingsNew,
+                    onClick = onTurnOff,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }

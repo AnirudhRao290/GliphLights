@@ -20,7 +20,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ControlsViewModel @Inject constructor(
-    private val glyphRepository: GlyphRepository
+    private val glyphRepository: GlyphRepository,
+    private val settingsRepository: com.example.gliphlights.repository.SettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ControlsUiState>(ControlsUiState.Loading)
@@ -43,6 +44,22 @@ class ControlsViewModel @Inject constructor(
 
     init {
         observeState()
+        observeSettingsDefaults()
+    }
+
+    private fun observeSettingsDefaults() {
+        viewModelScope.launch {
+            settingsRepository.settings.collect { settings ->
+                // Seed once from Settings; user can still tweak sliders on this screen.
+                if (_animationParams.value == AnimationParams()) {
+                    _animationParams.value = AnimationParams(
+                        period = settings.animatePeriod,
+                        cycles = settings.animateCycles,
+                        interval = settings.animateInterval
+                    )
+                }
+            }
+        }
     }
 
     private fun observeState() {
@@ -83,11 +100,11 @@ class ControlsViewModel @Inject constructor(
                 if (channelsToKeep.isEmpty()) {
                     glyphRepository.turnOff()
                 } else {
-                    glyphRepository.toggleChannels(channelsToKeep.toList())
+                    glyphRepository.setChannels(channelsToKeep.toList())
                 }
             } else {
                 val newActive = (currentState?.activeChannels ?: emptySet()) + zoneChannels
-                glyphRepository.toggleChannels(newActive.toList())
+                glyphRepository.setChannels(newActive.toList())
             }
 
             if (result is SdkResult.Error) {
@@ -151,7 +168,7 @@ class ControlsViewModel @Inject constructor(
             val result = if (newActive.isEmpty()) {
                 glyphRepository.turnOff()
             } else {
-                glyphRepository.toggleChannels(newActive)
+                glyphRepository.setChannels(newActive)
             }
             if (result is SdkResult.Error) {
                 _errorState.value = ErrorState.RuntimeError(result.message, result.exception)
